@@ -60,10 +60,9 @@ class TranscriptExtractor:
             text = " ".join(text_parts).replace("\n", " ").strip()
             return text, "auto"
 
-        except (TranscriptsDisabled, NoTranscriptFound):
-            return "", "unavailable"
         except Exception:
-            # Catches VideoUnavailable, RequestBlocked, InvalidVideoId, network errors
+            # Catches TranscriptsDisabled, NoTranscriptFound, VideoUnavailable,
+            # RequestBlocked, InvalidVideoId, and all network errors
             return "", "unavailable"
 
     def from_text(self, text: str) -> tuple[str, str]:
