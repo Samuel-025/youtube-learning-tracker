@@ -1,4 +1,8 @@
-"""Local JSON storage for YouTube Learning Tracker."""
+"""Local JSON storage for YouTube Learning Tracker.
+
+All data is stored in data/videos.json on your local machine.
+This file is gitignored — it never gets committed to GitHub.
+"""
 
 import json
 import os
@@ -9,13 +13,20 @@ from models.video import Video, WatchStatus
 class Storage:
     def __init__(self, path: str = "data/videos.json"):
         self.path = path
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        if not os.path.exists(path):
+        # Always resolve relative to the project root, not the calling script
+        if not os.path.isabs(path):
+            root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            self.path = os.path.join(root, path)
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        if not os.path.exists(self.path):
             self._write({})
 
     def _read(self) -> dict:
-        with open(self.path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(self.path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            return {}
 
     def _write(self, data: dict):
         with open(self.path, "w", encoding="utf-8") as f:
@@ -66,3 +77,19 @@ class Storage:
         for v in self.get_all_videos():
             counts[v.status.value] += 1
         return counts
+
+    def get_storage_path(self) -> str:
+        """Return the resolved absolute path to the storage file."""
+        return self.path
+
+    def get_storage_size(self) -> str:
+        """Return human-readable size of the storage file."""
+        if not os.path.exists(self.path):
+            return "0 KB"
+        size = os.path.getsize(self.path)
+        if size < 1024:
+            return f"{size} B"
+        elif size < 1024 * 1024:
+            return f"{size / 1024:.1f} KB"
+        else:
+            return f"{size / (1024 * 1024):.1f} MB"

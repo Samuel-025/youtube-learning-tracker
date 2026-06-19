@@ -1,13 +1,57 @@
-# Environment
+# =============================================
+# ENVIRONMENT — never commit real keys
+# =============================================
 .env
 *.env
+.env.*
+!.env.example
 
-# Local data (personal storage — never commit)
-data/*.json
+# =============================================
+# LOCAL USER DATA — never commit personal data
+# =============================================
+
+# Video library (all JSON in data/ except .gitkeep)
+data/
 !data/.gitkeep
 
-# Python
+# Any stray JSON files at root level
+*.json
+!package.json
+
+# Transcript text files (manually uploaded/saved)
+transcripts/
+*.transcript.txt
+
+# Exported files (Markdown, PDF, CSV exports — future V3)
+exports/
+*.export.md
+*.export.pdf
+*.export.csv
+
+# User-generated notes files
+notes/
+*.notes.txt
+
+# Any SQLite database (in case V2+ switches to DB)
+*.db
+*.sqlite
+*.sqlite3
+
+# Backup files
+*.bak
+*.backup
+
+# =============================================
+# STREAMLIT SECRETS — never commit real secrets
+# =============================================
+.streamlit/secrets.toml
+
+# =============================================
+# PYTHON
+# =============================================
 __pycache__/
+*.py[cod]
+*$py.class
 *.pyc
 *.pyo
 *.pyd
@@ -17,29 +61,70 @@ build/
 dist/
 *.egg-info/
 .eggs/
+*.egg
+wheelhouse/
 
-# Virtual environment
+# =============================================
+# VIRTUAL ENVIRONMENT
+# =============================================
 venv/
 .venv/
 env/
+ENV/
+.env.bak
 
-# IDE
+# =============================================
+# IDE & EDITOR
+# =============================================
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-workspace
+*.sublime-project
+.spyproject
+.ropeproject
 
-# Streamlit
-.streamlit/secrets.toml
-
-# Pytest
+# =============================================
+# TESTING & COVERAGE
+# =============================================
 .pytest_cache/
 .cache/
+.coverage
+coverage.xml
+htmlcov/
+*.coveragerc
 
-# Logs
+# =============================================
+# LOGS
+# =============================================
 *.log
 logs/
+log/
 
-# OS
+# =============================================
+# OS FILES
+# =============================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# =============================================
+# JUPYTER NOTEBOOKS (if used in future)
+# =============================================
+.ipynb_checkpoints/
+*.ipynb
+
+# =============================================
+# TEMP / SCRATCH
+# =============================================
+tmp/
+temp/
+scratch/
+*.tmp
+*.temp
