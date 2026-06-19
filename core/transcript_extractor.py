@@ -24,7 +24,7 @@ class TranscriptExtractor:
         """
         Try to auto-extract transcript.
         Returns (transcript_text, source) where source is 'auto' or 'unavailable'.
-        Transcript text includes [MM:SS] timestamps for each segment.
+        Transcript text includes [MM:SS] or [HH:MM:SS] timestamps for each segment.
         """
         if not _YT_AVAILABLE:
             return "", "unavailable (youtube-transcript-api not installed)"
@@ -59,10 +59,14 @@ class TranscriptExtractor:
                 if not text:
                     continue
 
-                # Format timestamp as [MM:SS]
+                # Format timestamp — [MM:SS] for videos <100 min, [HHH:MM:SS] for longer
                 total_sec = int(start)
-                mins, secs = divmod(total_sec, 60)
-                timestamp = f"[{mins:02d}:{secs:02d}]"
+                hours, remainder = divmod(total_sec, 3600)
+                mins, secs = divmod(remainder, 60)
+                if hours > 0:
+                    timestamp = f"[{hours}:{mins:02d}:{secs:02d}]"
+                else:
+                    timestamp = f"[{mins:02d}:{secs:02d}]"
                 text_parts.append(f"{timestamp} {text}")
 
             text = "\n".join(text_parts).strip()

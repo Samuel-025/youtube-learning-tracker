@@ -1,7 +1,11 @@
 """AI-powered and fallback summarizer — bullets + paragraph + Q&A."""
 
 import os
+import re
 from typing import Optional
+
+# Matches [MM:SS], [H:MM:SS], [HH:MM:SS], [HHH:MM:SS] etc.
+_TIMESTAMP_RE = re.compile(r"\[\d+:\d{2}(?::\d{2})?\]\s*")
 
 
 class Summarizer:
@@ -65,11 +69,14 @@ class Summarizer:
                 return "No answer returned."
 
             else:
-                # No AI provider — use keyword-based fallback
                 return self._basic_qa(transcript, question)
 
         except Exception as e:
             return f"Could not answer: {e}"
+
+    def _clean_transcript(self, transcript: str) -> str:
+        """Strip all timestamp markers before passing to AI or basic fallback."""
+        return _TIMESTAMP_RE.sub("", transcript)
 
     def _summarize_anthropic(self, transcript: str, title: str) -> tuple[list, str]:
         try:
@@ -123,9 +130,7 @@ class Summarizer:
 
     def _build_prompt(self, transcript: str, title: str) -> str:
         max_chars = 6000
-        # Strip timestamps for summarization — cleaner input for the AI
-        import re
-        clean = re.sub(r"\[\d{2}:\d{2}\]\s*", "", transcript)
+        clean = self._clean_transcript(transcript)
         trimmed = clean[:max_chars] + ("..." if len(clean) > max_chars else "")
         return f"""You are a helpful learning assistant. Given the transcript below, provide:
 1. BULLETS: 5-7 concise key takeaway bullet points (start each with '- ')
@@ -146,9 +151,8 @@ PARAGRAPH:
 Your paragraph summary here."""
 
     def _build_qa_prompt(self, transcript: str, question: str, title: str) -> str:
-        import re
         max_chars = 5000
-        clean = re.sub(r"\[\d{2}:\d{2}\]\s*", "", transcript)
+        clean = self._clean_transcript(transcript)
         trimmed = clean[:max_chars]
         return f"""You are a helpful learning assistant. Answer the question based ONLY on the transcript below.
 If the answer is not in the transcript, say so clearly.
@@ -178,9 +182,7 @@ Answer:"""
 
     def _basic_qa(self, transcript: str, question: str) -> str:
         """Keyword-based fallback: return transcript sentences matching question keywords."""
-        import re
-        # Strip timestamps before keyword search
-        clean = re.sub(r"\[\d{2}:\d{2}\]\s*", "", transcript)
+        clean = self._clean_transcript(transcript)
         keywords = [w.lower() for w in question.split() if len(w) > 3]
         sentences = [s.strip() for s in clean.split(".") if s.strip()]
         matches = [s for s in sentences if any(k in s.lower() for k in keywords)]
@@ -190,8 +192,7 @@ Answer:"""
 
     def _summarize_basic(self, transcript: str) -> tuple[list, str]:
         """Fallback: extract first few sentences as a basic summary."""
-        import re
-        clean = re.sub(r"\[\d{2}:\d{2}\]\s*", "", transcript)
+        clean = self._clean_transcript(transcript)
         sentences = [s.strip() for s in clean.replace("\n", " ").split(".") if len(s.strip()) > 30]
         bullets = [s + "." for s in sentences[:5]]
         paragraph = " ".join(sentences[:3]) + "."
