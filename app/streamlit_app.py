@@ -458,7 +458,6 @@ with st.sidebar:
     c1, c2 = st.columns(2)
     c1.metric("🟢 Done",     counts.get("completed", 0))
     c2.metric("🟡 Watching", counts.get("watching",  0))
-    # Collections count in sidebar
     n_colls = len(storage.get_all_collections())
     if n_colls:
         st.caption(f"📁 {n_colls} collection{'s' if n_colls != 1 else ''}")
@@ -624,7 +623,6 @@ elif page == "📁 Collections":
                 st.session_state.pop("active_collection_id", None)
                 st.rerun()
 
-            # Header
             h_col1, h_col2 = st.columns([3, 1])
             with h_col1:
                 st.title(f"{coll.emoji} {coll.name}")
@@ -632,7 +630,6 @@ elif page == "📁 Collections":
                     st.caption(coll.description)
                 st.caption(f"{coll.video_count} video{'s' if coll.video_count != 1 else ''}")
             with h_col2:
-                # Rename / edit
                 with st.expander("✏️ Edit"):
                     new_name = st.text_input("Name", value=coll.name, key="edit_coll_name")
                     new_desc = st.text_input("Description", value=coll.description, key="edit_coll_desc")
@@ -649,7 +646,6 @@ elif page == "📁 Collections":
 
             st.divider()
 
-            # Videos in this collection
             coll_videos = storage.get_videos_in_collection(coll.id)
             if not coll_videos:
                 st.info("📦 No videos yet. Open any video → 📁 Collections tab to add it here.")
@@ -675,7 +671,6 @@ elif page == "📁 Collections":
                                     st.rerun()
 
             st.divider()
-            # Add videos to this collection from full library
             with st.expander("➕ Add videos to this collection"):
                 all_vids  = storage.get_all_videos()
                 not_in    = [v for v in all_vids if v.video_id not in coll.video_ids]
@@ -684,7 +679,7 @@ elif page == "📁 Collections":
                 else:
                     search_q = st.text_input("Filter videos", placeholder="Type to filter...", key=f"coll_add_search_{coll.id}")
                     filtered = [v for v in not_in if search_q.lower() in v.title.lower() or search_q.lower() in v.channel.lower()] if search_q else not_in
-                    for v in filtered[:20]:   # cap at 20 to keep UI snappy
+                    for v in filtered[:20]:
                         a_cols = st.columns([3, 1])
                         with a_cols[0]:
                             st.caption(f"{v.title[:60]}  ·  {v.channel}")
@@ -700,7 +695,6 @@ elif page == "📁 Collections":
     st.title("📁 Collections")
     all_colls = storage.get_all_collections()
 
-    # Create new collection form
     with st.expander("➕ Create new collection", expanded=len(all_colls) == 0):
         with st.form("new_coll_form", clear_on_submit=True):
             f_col1, f_col2, f_col3 = st.columns([2, 1, 1])
@@ -714,7 +708,7 @@ elif page == "📁 Collections":
                 if new_name.strip():
                     coll = Collection(name=new_name.strip(), emoji=new_emoji, description=new_desc.strip())
                     storage.save_collection(coll)
-                    st.success(f"✅ Created "{new_emoji} {new_name.strip()}"")
+                    st.success(f'✅ Created "{new_emoji} {new_name.strip()}"')
                     st.rerun()
                 else:
                     st.warning("⚠️ Name cannot be empty.")
@@ -723,7 +717,6 @@ elif page == "📁 Collections":
         st.info("📦 No collections yet. Create one above to organise your library.")
     else:
         st.caption(f"{len(all_colls)} collection{'s' if len(all_colls) != 1 else ''}")
-        # Render collection cards in a 3-column grid
         c_cols = st.columns(3)
         for i, coll in enumerate(all_colls):
             with c_cols[i % 3]:
@@ -731,7 +724,6 @@ elif page == "📁 Collections":
                     st.markdown(f"### {coll.emoji} {coll.name}")
                     if coll.description:
                         st.caption(coll.description)
-                    # Progress summary for this collection
                     coll_vids = storage.get_videos_in_collection(coll.id)
                     total_in  = len(coll_vids)
                     done_in   = sum(1 for v in coll_vids if v.status == WatchStatus.COMPLETED)
@@ -753,7 +745,7 @@ elif page == "📁 Collections":
                             st.session_state[f"del_armed_{coll.id}"] = True
                             st.rerun()
                     if st.session_state.get(f"del_armed_{coll.id}"):
-                        st.error(f"Delete "{coll.name}"? Videos are kept.")
+                        st.error(f'Delete "{coll.name}"? Videos are kept.')
                         yes_col, no_col = st.columns(2)
                         with yes_col:
                             if st.button("✅ Yes", key=f"del_yes_{coll.id}", use_container_width=True):
