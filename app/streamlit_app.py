@@ -16,6 +16,7 @@ from core.youtube_fetcher import YouTubeFetcher
 from core.transcript_extractor import TranscriptExtractor
 from core.summarizer import Summarizer
 from core.notes_generator import NotesGenerator
+from core.downloader import Downloader
 from models.video import Video, WatchStatus
 
 # ─── Page config ─────────────────────────────────────────────────────────────
@@ -33,6 +34,7 @@ fetcher    = YouTubeFetcher()
 extractor  = TranscriptExtractor()
 summarizer = Summarizer()
 notes_gen  = NotesGenerator()
+downloader = Downloader(str(root / "downloads"))
 
 STATUS_COLORS = {
     "saved":     "🔵",
@@ -40,6 +42,13 @@ STATUS_COLORS = {
     "completed": "🟢",
     "dropped":   "🔴",
     "rewatch":   "🟣",
+}
+
+DOWNLOAD_MODES = {
+    "🎧 Audio only (MP3 192k)": "audio",
+    "📹 Video 720p (MP4)": "video_720",
+    "📹 Video 1080p (MP4)": "video_1080",
+    "📹 Video Best quality (MP4)": "video_best",
 }
 
 
@@ -52,7 +61,7 @@ def _finish_add_video(video: Video) -> None:
     with st.spinner("✨ Generating summary and notes..."):
         try:
             bullets, paragraph = summarizer.summarize(video.transcript_text, video.title)
-            video.summary_bullets  = bullets
+            video.summary_bullets   = bullets
             video.summary_paragraph = paragraph
             video.auto_notes = notes_gen.generate_auto_notes(video.transcript_text, video.title)
             st.success("✅ Summary and notes generated.")
@@ -63,6 +72,70 @@ def _finish_add_video(video: Video) -> None:
     st.session_state["pending_transcript_done"] = True
     st.balloons()
     st.success("✅ Video saved! Go to 📚 Library to view it.")
+
+
+def _render_download_tab(video: Video) -> None:
+    """Download tab: audio or video via yt-dlp."""
+    vid = video.video_id
+
+    if not downloader.is_available():
+        st.error("❌ yt-dlp not found in this Python environment.")
+        st.code("py -3.11 -m pip install yt-dlp")
+        return
+
+    st.markdown("### ⬇️ Download this video")
+    st.caption("Files are saved to the `downloads/` folder inside the project.")
+
+    mode_label = st.selectbox(
+        "Format",
+        options=list(DOWNLOAD_MODES.keys()),
+        key=f"dl_mode_{vid}",
+    )
+    mode = DOWNLOAD_MODES[mode_label]
+
+    # Show existing download if already done
+    if video.local_path and Path(video.local_path).exists():
+        st.success(f"✅ Already downloaded: `{Path(video.local_path).name}`")
+        with open(video.local_path, "rb") as f:
+            file_bytes = f.read()
+        st.download_button(
+            label="📥 Save to computer",
+            data=file_bytes,
+            file_name=Path(video.local_path).name,
+            mime="audio/mpeg" if video.local_path.endswith(".mp3") else "video/mp4",
+            key=f"dl_save_{vid}",
+        )
+        st.divider()
+        st.caption("Download a different format below ↓")
+
+    dl_key = f"dl_running_{vid}"
+    if dl_key not in st.session_state:
+        st.session_state[dl_key] = False
+
+    if st.button("▶️ Start Download", key=f"dl_btn_{vid}", type="primary"):
+        st.session_state[dl_key] = True
+
+    if st.session_state[dl_key]:
+        with st.spinner(f"Downloading {mode_label} — this may take a minute..."):
+            try:
+                out_path = downloader.download(vid, mode)  # type: ignore[arg-type]
+                video.local_path = str(out_path)
+                storage.update_video(video)
+                st.session_state[dl_key] = False
+                st.success(f"✅ Downloaded: `{out_path.name}`")
+                # Offer in-browser save
+                with open(out_path, "rb") as f:
+                    file_bytes = f.read()
+                st.download_button(
+                    label="📥 Save to computer",
+                    data=file_bytes,
+                    file_name=out_path.name,
+                    mime="audio/mpeg" if str(out_path).endswith(".mp3") else "video/mp4",
+                    key=f"dl_save_new_{vid}",
+                )
+            except RuntimeError as exc:
+                st.session_state[dl_key] = False
+                st.error(f"❌ {exc}")
 
 
 def _render_detail_page(video: Video) -> None:
@@ -97,7 +170,7 @@ def _render_detail_page(video: Video) -> None:
             st.rerun()
 
     st.divider()
-    tabs = st.tabs(["📝 Summary", "🗒️ Notes", "📄 Transcript", "❓ Ask"])
+    tabs = st.tabs(["📝 Summary", "🗒️ Notes", "📄 Transcript", "❓ Ask", "⬇️ Download"])
 
     # Summary tab
     with tabs[0]:
@@ -213,6 +286,10 @@ def _render_detail_page(video: Video) -> None:
                 if st.button("🗑️ Clear", key=f"clear_ans_{vid}"):
                     st.session_state[answer_key] = ""
                     st.rerun()
+
+    # Download tab
+    with tabs[4]:
+        _render_download_tab(video)
 
 
 def _render_video_card(video: Video) -> None:
@@ -437,13 +514,12 @@ elif page == "⚙️ Settings":
     openai_key  = os.getenv("OPENAI_API_KEY", "")
     ai_provider = os.getenv("AI_PROVIDER", "none")
 
-    # Check optional deps
     try:
         import yt_dlp as _ytdlp
         ytdlp_version = _ytdlp.version.__version__
         ytdlp_status  = f"✅ {ytdlp_version}"
     except ImportError:
-        ytdlp_status = "❌ Not installed (`pip install yt-dlp`)"
+        ytdlp_status = "❌ Not installed (`py -3.11 -m pip install yt-dlp`)"
 
     try:
         import youtube_transcript_api as _yta  # noqa: F401
@@ -461,6 +537,7 @@ elif page == "⚙️ Settings":
     st.write(f"💾 **Storage path:** `{storage_path}`")
     st.write(f"💾 **Storage size:** {storage.get_storage_size()}")
     st.write(f"📊 **Total saved:** {sum(storage.count_by_status().values())}")
+    st.write(f"📂 **Downloads folder:** `{root / 'downloads'}`")
 
     st.divider()
     st.subheader("🔗 Get Free API Keys")

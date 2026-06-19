@@ -31,6 +31,7 @@ class Video:
     auto_notes:        list             = field(default_factory=list)
     manual_notes:      str              = ""
     tags:              list             = field(default_factory=list)
+    local_path:        str              = ""   # absolute path to downloaded audio/video file
     created_at:        str              = field(default_factory=lambda: datetime.now().isoformat())
     updated_at:        str              = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -49,7 +50,8 @@ class Video:
             "video_id", "url", "title", "channel", "thumbnail_url",
             "published_at", "duration", "status", "transcript_text",
             "transcript_source", "summary_bullets", "summary_paragraph",
-            "auto_notes", "manual_notes", "tags", "created_at", "updated_at",
+            "auto_notes", "manual_notes", "tags", "local_path",
+            "created_at", "updated_at",
         }
         clean = {k: v for k, v in data.items() if k in known}
         # Coerce status string → enum
