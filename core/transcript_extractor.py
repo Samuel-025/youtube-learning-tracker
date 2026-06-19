@@ -13,7 +13,6 @@ except ImportError:
 
 
 class TranscriptExtractor:
-    # Explicit list — never None, so Pylance is satisfied
     DEFAULT_LANGUAGES: list[str] = ["en", "en-US", "en-GB", "hi"]
 
     def __init__(self, preferred_languages: Optional[list[str]] = None):
@@ -30,9 +29,9 @@ class TranscriptExtractor:
             return "", "unavailable (youtube-transcript-api not installed)"
 
         try:
-            # v1.x API: instantiate first, then call instance method
+            # v1.x: instantiate, then call .list() (renamed from list_transcripts)
             ytt_api = YouTubeTranscriptApi()
-            transcript_list = ytt_api.list_transcripts(video_id)
+            transcript_list = ytt_api.list(video_id)
 
             # Try preferred languages first
             try:
@@ -50,13 +49,12 @@ class TranscriptExtractor:
                         pass
 
             entries = transcript.fetch()
-            # youtube-transcript-api >= 1.0 returns FetchedTranscript (iterable of dicts)
             text_parts: list[str] = []
             for entry in entries:
                 if isinstance(entry, dict):
                     text_parts.append(entry.get("text", ""))
                 else:
-                    # FetchedTranscriptSnippet object
+                    # FetchedTranscriptSnippet object (v1.x)
                     text_parts.append(str(getattr(entry, "text", "")))
 
             text = " ".join(text_parts).replace("\n", " ").strip()
@@ -65,6 +63,7 @@ class TranscriptExtractor:
         except (TranscriptsDisabled, NoTranscriptFound):
             return "", "unavailable"
         except Exception:
+            # Catches VideoUnavailable, RequestBlocked, InvalidVideoId, network errors
             return "", "unavailable"
 
     def from_text(self, text: str) -> tuple[str, str]:
