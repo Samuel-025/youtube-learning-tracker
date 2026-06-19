@@ -7,6 +7,8 @@ Key design decisions
 * FFmpeg path is passed directly via `ffmpeg_location` opt.
 * Verbose warnings are captured and stored in `last_warnings`.
 * RuntimeError is raised if a downloaded video file has no audio stream.
+* player_client=['web','android'] bypasses the Deno/EJS JS-challenge solver
+  requirement for the vast majority of YouTube videos.
 """
 
 import shutil
@@ -24,6 +26,9 @@ _DEFAULT_DIR = Path(__file__).resolve().parent.parent / "downloads"
 
 DownloadMode = Literal["audio", "video_720", "video_1080", "video_best"]
 
+# Extensions that represent a final (non-intermediate) output file.
+_FINAL_EXTS = {".mp4", ".mp3", ".m4a", ".webm", ".mkv", ".ogg", ".opus"}
+
 
 def _ffmpeg_path() -> str | None:
     return shutil.which("ffmpeg")
@@ -31,6 +36,19 @@ def _ffmpeg_path() -> str | None:
 
 def _ffmpeg_available() -> bool:
     return _ffmpeg_path() is not None
+
+
+def _ffprobe_path() -> str | None:
+    """Return the absolute path to ffprobe, preferring the same directory as ffmpeg."""
+    ff = _ffmpeg_path()
+    if ff:
+        parent = Path(ff).parent
+        for name in ("ffprobe.exe", "ffprobe"):
+            candidate = parent / name
+            if candidate.exists():
+                return str(candidate)
+    # Fall back to PATH only if ffmpeg itself wasn't found in a known location.
+    return shutil.which("ffprobe")
 
 
 def ffmpeg_version() -> str:
@@ -68,26 +86,28 @@ class Downloader:
         opts["outtmpl"] = str(self.download_dir / "%(title)s [%(id)s].%(ext)s")
 
         log_lines: list[str] = []
-        # fix #2: track the *final* output path reported by yt-dlp after merging/post-processing
+        # Track the *final* output path reported by yt-dlp after merging/post-processing.
         final_filepath: list[str] = []
 
         class _Logger:
-            def debug(self, msg: str) -> None: pass
-            def warning(self, msg: str) -> None: log_lines.append(f"WARN: {msg}")
-            def error(self, msg: str) -> None: log_lines.append(f"ERR:  {msg}")
+            def debug(self, msg: str) -> None:
+                pass
+            def warning(self, msg: str) -> None:
+                log_lines.append(f"WARN: {msg}")
+            def error(self, msg: str) -> None:
+                log_lines.append(f"ERR:  {msg}")
 
         def _hook(d: dict[str, Any]) -> None:
-            # fix #2: prefer 'info_dict' final filename over raw 'filename'
-            # After merging, yt-dlp sets status='finished' on the merged file.
             if d.get("status") == "finished":
-                # info_dict holds the merged output path after post-processing
                 info = d.get("info_dict") or {}
                 fname = (
                     info.get("filepath")
                     or info.get("_filename")
                     or d.get("filename", "")
                 )
-                if fname:
+                # Only record paths whose extension looks like a final output,
+                # not the intermediate per-stream files (.f398.mp4, .f140.m4a, etc.)
+                if fname and Path(fname).suffix.lower() in _FINAL_EXTS:
                     final_filepath.append(fname)
 
         opts["logger"]         = _Logger()
@@ -96,10 +116,10 @@ class Downloader:
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:  # type: ignore[arg-type]
                 info = ydl.extract_info(url, download=True)
-                # fix #2: also grab the final path from extract_info return value
+                # Also grab the final path from extract_info return value.
                 if info:
                     fp = info.get("filepath") or info.get("_filename", "")
-                    if fp:
+                    if fp and Path(fp).suffix.lower() in _FINAL_EXTS:
                         final_filepath.append(fp)
         except Exception as exc:
             detail = "\n".join(log_lines[-10:]) if log_lines else ""
@@ -114,9 +134,19 @@ class Downloader:
 
     def _build_opts(self, mode: DownloadMode, ff_path: str | None) -> dict[str, Any]:
         base: dict[str, Any] = {
-            "quiet":       True,
+            # quiet=False so JS-challenge warnings reach the _Logger and are
+            # stored in last_warnings instead of being silently swallowed.
+            "quiet":       False,
+            "verbose":     False,
             "no_warnings": False,
             "noplaylist":  True,
+            # Use web + android clients to bypass the Deno/EJS challenge solver
+            # requirement that causes "Signature solving failed" warnings.
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web", "android"],
+                }
+            },
         }
 
         if ff_path:
@@ -190,7 +220,7 @@ class Downloader:
         had_ff: bool,
         final_filepath: list[str],
     ) -> Path:
-        # fix #2: walk candidates in reverse (latest hook event last) and
+        # Walk candidates in reverse (latest hook event last) and
         # accept only paths that actually exist on disk right now.
         for fname in reversed(final_filepath):
             p = Path(fname)
@@ -202,12 +232,12 @@ class Downloader:
                 if mp3.exists():
                     return mp3
 
-            # Accept the path only if it physically exists (not the deleted intermediate)
+            # Accept the path only if it physically exists (not a deleted intermediate).
             if p.exists():
                 self._assert_has_audio(p, mode)
                 return p
 
-        # Fallback: scan downloads dir for newest file matching the video ID
+        # Fallback: scan downloads dir for newest file matching the video ID.
         candidates = sorted(
             self.download_dir.glob(f"*{video_id}*"),
             key=lambda p: p.stat().st_mtime,
@@ -226,22 +256,15 @@ class Downloader:
     def _assert_has_audio(self, path: Path, mode: DownloadMode) -> None:
         if mode == "audio":
             return
-        ff_path = _ffmpeg_path()
-        if not ff_path:
+        ffprobe = _ffprobe_path()
+        if not ffprobe:
             return
-
-        ffprobe_dir = Path(ff_path).parent
-        ffprobe = str(ffprobe_dir / "ffprobe.exe")
-        if not Path(ffprobe).exists():
-            ffprobe = str(ffprobe_dir / "ffprobe")
-        if not Path(ffprobe).exists():
-            ffprobe = "ffprobe"
 
         try:
             result = subprocess.run(
                 [ffprobe, "-v", "error", "-select_streams", "a",
                  "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(path)],
-                capture_output=True, text=True, timeout=15
+                capture_output=True, text=True, timeout=15,
             )
             if "audio" not in result.stdout:
                 path.unlink(missing_ok=True)
