@@ -5,7 +5,7 @@ import re
 import json
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # yt-dlp (primary)
 try:
@@ -94,7 +94,8 @@ class TranscriptExtractor:
         """Use yt-dlp to download the best available subtitle file to outdir."""
         lang_codes = self.preferred_languages + ["en"]
 
-        ydl_opts: dict = {
+        # Typed as dict[str, Any] so Pylance resolves yt_dlp's _Params type correctly
+        ydl_opts: dict[str, Any] = {
             "skip_download": True,
             "quiet": True,
             "no_warnings": True,
