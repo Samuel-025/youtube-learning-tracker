@@ -1,10 +1,10 @@
 """YouTube Learning Tracker — Streamlit web app."""
 
-import streamlit as st
+import streamlit as st  # type: ignore[import-untyped]
 import os
 import sys
 from pathlib import Path
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # type: ignore[import-untyped]
 
 # ─── Path & env setup (must come before any local imports) ──────────────────
 root = Path(__file__).resolve().parent.parent
@@ -239,10 +239,17 @@ elif page == "➕ Add Video":
         # ─ Step 1: Fetch metadata
         with st.spinner("📡 Fetching video info..."):
             try:
-                video: Video = fetcher.fetch_video(url)
+                fetched = fetcher.fetch_video(url)
             except Exception as e:
                 st.error(f"❌ Failed to fetch video: {e}")
                 st.stop()
+
+        # Guard: fetcher returns Video or None
+        if fetched is None:
+            st.error("❌ Could not retrieve video info. Check the URL and your YouTube API key.")
+            st.stop()
+
+        video: Video = fetched  # now guaranteed non-None
 
         st.success(f"✅ Found: **{video.title}** by {video.channel}")
         col1, col2 = st.columns([1, 2])
