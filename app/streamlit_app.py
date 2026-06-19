@@ -82,9 +82,48 @@ def _render_progress_bar(video: Video, compact: bool = False) -> None:
         if pct >= 100:
             st.success(f"✅ Watched fully — {total_fmt}")
         elif pct > 0:
-            st.progress(pct / 100, text=f"⏱ {watched_fmt} / {total_fmt}    {pct:.1f}% watched")
+            st.progress(pct / 100, text=f"⏱ {watched_fmt} / {total_fmt}    {pct:.1f}% watched")
         else:
             st.progress(0.0, text=f"⏱ Not started — {total_fmt} total")
+
+
+def _apply_progress(video: Video, new_sec: int) -> str | None:
+    """
+    Update watch_progress_sec and auto-transition status.
+
+    Rules
+    -----
+    • new_sec >= duration  → always set COMPLETED (any prior status)
+    • new_sec > 0          → SAVED → WATCHING  (start watching)
+    • new_sec == 0         → COMPLETED/WATCHING → SAVED  (reset)
+    • dropped / rewatch    → never silently overwritten on partial progress
+                             (only overwritten when reaching 100%)
+
+    Returns a celebratory message string when status flips to COMPLETED,
+    otherwise None.
+    """
+    video.watch_progress_sec = new_sec
+    celebration: str | None = None
+
+    if new_sec >= video.duration_sec:
+        # ── 100% reached ───────────────────────────────────────────────
+        if video.status != WatchStatus.COMPLETED:
+            video.status = WatchStatus.COMPLETED
+            celebration  = "🎉 Marked as **Completed**!"
+    elif new_sec > 0:
+        # ── Partial progress ───────────────────────────────────────────
+        if video.status == WatchStatus.SAVED:
+            video.status = WatchStatus.WATCHING
+        elif video.status == WatchStatus.COMPLETED:
+            # User dragged back below 100% — un-complete it
+            video.status = WatchStatus.WATCHING
+        # dropped / rewatch / watching → leave untouched
+    else:
+        # ── Reset to 0 ─────────────────────────────────────────────────
+        if video.status in (WatchStatus.COMPLETED, WatchStatus.WATCHING):
+            video.status = WatchStatus.SAVED
+
+    return celebration
 
 
 def _render_progress_controls(video: Video) -> None:
@@ -115,21 +154,21 @@ def _render_progress_controls(video: Video) -> None:
     for col, (label, val) in zip(q_cols, quick_values):
         with col:
             if st.button(label, key=f"qset_{vid}_{label}", use_container_width=True):
-                video.watch_progress_sec = val
-                if val == video.duration_sec and video.status != WatchStatus.COMPLETED:
-                    video.status = WatchStatus.COMPLETED
-                elif val == 0 and video.status == WatchStatus.COMPLETED:
-                    video.status = WatchStatus.WATCHING
+                celebration = _apply_progress(video, val)
                 storage.update_video(video)
+                if celebration:
+                    st.balloons()
+                    st.success(celebration)
                 st.rerun()
+
     if st.button("💾 Save Progress", key=f"save_prog_{vid}", type="primary"):
-        video.watch_progress_sec = new_sec
-        if new_sec >= video.duration_sec and video.status != WatchStatus.COMPLETED:
-            video.status = WatchStatus.COMPLETED
-            st.success("🎉 Marked as Completed!")
-        elif new_sec > 0 and video.status == WatchStatus.SAVED:
-            video.status = WatchStatus.WATCHING
+        celebration = _apply_progress(video, new_sec)
         storage.update_video(video)
+        if celebration:
+            st.balloons()
+            st.success(celebration)
+        else:
+            st.success("✅ Progress saved.")
         st.rerun()
 
 
@@ -675,7 +714,7 @@ elif page == "📁 Collections":
                 if new_name.strip():
                     coll = Collection(name=new_name.strip(), emoji=new_emoji, description=new_desc.strip())
                     storage.save_collection(coll)
-                    st.success(f"✅ Created “{new_emoji} {new_name.strip()}”")
+                    st.success(f"✅ Created "{new_emoji} {new_name.strip()}"")
                     st.rerun()
                 else:
                     st.warning("⚠️ Name cannot be empty.")
@@ -714,7 +753,7 @@ elif page == "📁 Collections":
                             st.session_state[f"del_armed_{coll.id}"] = True
                             st.rerun()
                     if st.session_state.get(f"del_armed_{coll.id}"):
-                        st.error(f"Delete “{coll.name}”? Videos are kept.")
+                        st.error(f"Delete "{coll.name}"? Videos are kept.")
                         yes_col, no_col = st.columns(2)
                         with yes_col:
                             if st.button("✅ Yes", key=f"del_yes_{coll.id}", use_container_width=True):
