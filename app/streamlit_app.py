@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 
-# ─── Path & env setup ────────────────────────────────────────────────────────
+# ─── Path & env setup
 root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root))
 load_dotenv(root / ".env")
@@ -16,10 +16,10 @@ from core.youtube_fetcher import YouTubeFetcher
 from core.transcript_extractor import TranscriptExtractor
 from core.summarizer import Summarizer
 from core.notes_generator import NotesGenerator
-from core.downloader import Downloader
+from core.downloader import Downloader, ffmpeg_version
 from models.video import Video, WatchStatus
 
-# ─── Page config ─────────────────────────────────────────────────────────────
+# ─── Page config
 st.set_page_config(
     page_title="YouTube Learning Tracker",
     page_icon="📺",
@@ -27,7 +27,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ─── Init services ────────────────────────────────────────────────────────────
+# ─── Init services
 storage_path = os.getenv("STORAGE_PATH", str(root / "data" / "videos.json"))
 storage    = Storage(storage_path)
 fetcher    = YouTubeFetcher()
@@ -52,12 +52,11 @@ DOWNLOAD_MODES = {
 }
 
 
-# ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  HELPERS                                                                 ║
-# ╚══════════════════════════════════════════════════════════════════════════╝
+# ╔══════════════════════════════════════════════════════
+# ║  HELPERS
+# ╚══════════════════════════════════════════════════════
 
 def _finish_add_video(video: Video) -> None:
-    """Generate summary + notes, save, clean up session state."""
     with st.spinner("✨ Generating summary and notes..."):
         try:
             bullets, paragraph = summarizer.summarize(video.transcript_text, video.title)
@@ -76,38 +75,70 @@ def _finish_add_video(video: Video) -> None:
 
 def _render_download_tab(video: Video) -> None:
     """Download tab: audio or video via yt-dlp."""
-    vid = video.video_id
+    vid     = video.video_id
+    has_ff  = downloader.has_ffmpeg()
+    ff_ver  = ffmpeg_version()
 
     if not downloader.is_available():
-        st.error("❌ yt-dlp not found in this Python environment.")
+        st.error("❌ yt-dlp not found.")
         st.code("py -3.11 -m pip install yt-dlp")
         return
 
-    st.markdown("### ⬇️ Download this video")
-    st.caption("Files are saved to the `downloads/` folder inside the project.")
+    # ── FFmpeg status banner
+    if has_ff:
+        st.success(f"✅ FFmpeg detected — `{ff_ver.split('Copyright')[0].strip()}`  — all formats available.")
+    else:
+        st.warning(
+            "⚠️ **FFmpeg not found on PATH.**\n\n"
+            "Without FFmpeg:\n"
+            "- Audio → downloads as **.m4a** (has audio, no conversion)\n"
+            "- Video → downloads as **progressive MP4** (audio + video in one file, max ~720p)\n"
+            "- 1080p and Best modes fall back to 720p\n\n"
+            "To enable MP3 + full HD: install FFmpeg with `winget install --id Gyan.FFmpeg -e` then restart."
+        )
 
-    mode_label = st.selectbox(
+    st.markdown("### ⬇️ Download")
+    st.caption(f"Saved to: `{root / 'downloads'}`")
+
+    # ── Format selector with per-option notes
+    mode_labels = list(DOWNLOAD_MODES.keys())
+    if not has_ff:
+        mode_labels_display = [
+            "🎧 Audio only (M4A — no FFmpeg)",
+            "📹 Video 720p (MP4 progressive — no FFmpeg)",
+            "📹 Video 1080p (falls back to 720p — no FFmpeg)",
+            "📹 Video Best (progressive MP4 — no FFmpeg)",
+        ]
+    else:
+        mode_labels_display = mode_labels
+
+    selected_display = st.selectbox(
         "Format",
-        options=list(DOWNLOAD_MODES.keys()),
+        options=mode_labels_display,
         key=f"dl_mode_{vid}",
     )
-    mode = DOWNLOAD_MODES[mode_label]
+    # Map display label back to mode key
+    mode = list(DOWNLOAD_MODES.values())[mode_labels_display.index(selected_display)]
 
-    # Show existing download if already done
+    # ── Show existing download
     if video.local_path and Path(video.local_path).exists():
         st.success(f"✅ Already downloaded: `{Path(video.local_path).name}`")
         with open(video.local_path, "rb") as f:
             file_bytes = f.read()
+        fname = Path(video.local_path).name
+        mime  = "audio/mpeg" if fname.endswith(".mp3") else (
+                "audio/mp4"  if fname.endswith(".m4a") else "video/mp4")
         st.download_button(
             label="📥 Save to computer",
             data=file_bytes,
-            file_name=Path(video.local_path).name,
-            mime="audio/mpeg" if video.local_path.endswith(".mp3") else "video/mp4",
+            file_name=fname,
+            mime=mime,
             key=f"dl_save_{vid}",
         )
         st.divider()
-        st.caption("Download a different format below ↓")
+        st.caption("Re-download in a different format ↓")
 
+    # ── Download button
     dl_key = f"dl_running_{vid}"
     if dl_key not in st.session_state:
         st.session_state[dl_key] = False
@@ -116,30 +147,32 @@ def _render_download_tab(video: Video) -> None:
         st.session_state[dl_key] = True
 
     if st.session_state[dl_key]:
-        with st.spinner(f"Downloading {mode_label} — this may take a minute..."):
+        label_map = {v: k for k, v in DOWNLOAD_MODES.items()}
+        with st.spinner(f"Downloading {label_map.get(mode, mode)} — may take a minute..."):
             try:
                 out_path = downloader.download(vid, mode)  # type: ignore[arg-type]
                 video.local_path = str(out_path)
                 storage.update_video(video)
                 st.session_state[dl_key] = False
                 st.success(f"✅ Downloaded: `{out_path.name}`")
-                # Offer in-browser save
                 with open(out_path, "rb") as f:
                     file_bytes = f.read()
+                fname = out_path.name
+                mime  = "audio/mpeg" if fname.endswith(".mp3") else (
+                        "audio/mp4"  if fname.endswith(".m4a") else "video/mp4")
                 st.download_button(
                     label="📥 Save to computer",
                     data=file_bytes,
-                    file_name=out_path.name,
-                    mime="audio/mpeg" if str(out_path).endswith(".mp3") else "video/mp4",
+                    file_name=fname,
+                    mime=mime,
                     key=f"dl_save_new_{vid}",
                 )
             except RuntimeError as exc:
                 st.session_state[dl_key] = False
-                st.error(f"❌ {exc}")
+                st.error(f"❌ Download failed:\n\n{exc}")
 
 
 def _render_detail_page(video: Video) -> None:
-    """Full-page detail view rendered directly in the main area."""
     vid = video.video_id
 
     if st.button("← Back to Library", key="back_btn"):
@@ -172,7 +205,6 @@ def _render_detail_page(video: Video) -> None:
     st.divider()
     tabs = st.tabs(["📝 Summary", "🗒️ Notes", "📄 Transcript", "❓ Ask", "⬇️ Download"])
 
-    # Summary tab
     with tabs[0]:
         if video.summary_bullets:
             for b in video.summary_bullets:
@@ -193,7 +225,6 @@ def _render_detail_page(video: Video) -> None:
             else:
                 st.warning("⚠️ Add a transcript first.")
 
-    # Notes tab
     with tabs[1]:
         if video.auto_notes:
             st.markdown("**🤖 Auto Notes:**")
@@ -213,7 +244,6 @@ def _render_detail_page(video: Video) -> None:
             storage.update_video(video)
             st.success("✅ Notes saved.")
 
-    # Transcript tab
     with tabs[2]:
         if video.transcript_text:
             st.caption(f"Source: `{video.transcript_source or 'unknown'}`")
@@ -251,7 +281,6 @@ def _render_detail_page(video: Video) -> None:
                             st.success("✅ Saved!")
                             st.rerun()
 
-    # Ask tab
     with tabs[3]:
         if not video.transcript_text:
             st.warning("⚠️ Add a transcript first to ask questions.")
@@ -259,7 +288,6 @@ def _render_detail_page(video: Video) -> None:
             answer_key = f"qa_answer_{vid}"
             if answer_key not in st.session_state:
                 st.session_state[answer_key] = ""
-
             question = st.text_input(
                 "Ask a question about this video",
                 placeholder="e.g. What is the main concept explained?",
@@ -278,7 +306,6 @@ def _render_detail_page(video: Video) -> None:
                             st.session_state[answer_key] = f"Error: {exc}"
                 else:
                     st.warning("⚠️ Type a question first.")
-
             if st.session_state[answer_key]:
                 st.markdown("---")
                 st.markdown("**💡 Answer:**")
@@ -287,20 +314,17 @@ def _render_detail_page(video: Video) -> None:
                     st.session_state[answer_key] = ""
                     st.rerun()
 
-    # Download tab
     with tabs[4]:
         _render_download_tab(video)
 
 
 def _render_video_card(video: Video) -> None:
-    """Compact library card."""
     with st.container(border=True):
         if video.thumbnail_url:
             st.image(video.thumbnail_url, width="stretch")
         title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
         st.markdown(f"**{title_display}**")
         st.caption(f"{video.channel} · {video.duration}")
-
         status_options = [s.value for s in WatchStatus]
         new_status = st.selectbox(
             "Status",
@@ -314,15 +338,14 @@ def _render_video_card(video: Video) -> None:
             video.status = WatchStatus(new_status)
             storage.update_video(video)
             st.rerun()
-
         if st.button("📌 View Details", key=f"view_{video.video_id}", width="stretch"):
             st.session_state["detail_video_id"] = video.video_id
             st.rerun()
 
 
-# ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  PAGE ROUTING                                                            ║
-# ╚══════════════════════════════════════════════════════════════════════════╝
+# ╔══════════════════════════════════════════════════════
+# ║  PAGE ROUTING
+# ╚══════════════════════════════════════════════════════
 
 with st.sidebar:
     st.markdown("## 📺 YT Learning Tracker")
@@ -337,7 +360,6 @@ with st.sidebar:
     if st.session_state["_last_page"] != page:
         st.session_state.pop("detail_video_id", None)
         st.session_state["_last_page"] = page
-
     st.divider()
     counts = storage.count_by_status()
     total  = sum(counts.values())
@@ -347,14 +369,13 @@ with st.sidebar:
     c2.metric("🟡 Watching", counts.get("watching",  0))
 
 
-# ── Dashboard ────────────────────────────────────────────────────────────────
+# ── Dashboard
 if page == "📊 Dashboard":
     if "detail_video_id" in st.session_state:
         v = storage.get_video(st.session_state["detail_video_id"])
         if v:
             _render_detail_page(v)
             st.stop()
-
     st.title("📊 Dashboard")
     videos = storage.get_all_videos()
     if not videos:
@@ -375,14 +396,12 @@ if page == "📊 Dashboard":
                 _render_video_card(video)
 
 
-# ── Add Video ────────────────────────────────────────────────────────────────
+# ── Add Video
 elif page == "➕ Add Video":
     st.title("➕ Add New Video")
-
     with st.form("add_video_form"):
         url       = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
         submitted = st.form_submit_button("Fetch & Save", type="primary")
-
     if submitted and url:
         with st.spinner("📡 Fetching video info..."):
             try:
@@ -390,9 +409,8 @@ elif page == "➕ Add Video":
             except Exception as exc:
                 st.error(f"❌ Failed to fetch: {exc}")
                 st.stop()
-        st.session_state["pending_video"]            = fetched
-        st.session_state["pending_transcript_done"]  = False
-
+        st.session_state["pending_video"]           = fetched
+        st.session_state["pending_transcript_done"] = False
     if "pending_video" in st.session_state and not st.session_state.get("pending_transcript_done"):
         video: Video = st.session_state["pending_video"]
         st.success(f"✅ Found: **{video.title}** by {video.channel}")
@@ -404,7 +422,6 @@ elif page == "➕ Add Video":
             st.markdown(f"**Channel:** {video.channel}")
             st.markdown(f"**Duration:** {video.duration}")
             st.markdown(f"**Published:** {(video.published_at or '')[:10]}")
-
         if not video.transcript_text:
             with st.spinner("📄 Extracting transcript via yt-dlp..."):
                 transcript, source = extractor.extract(video.video_id)
@@ -413,7 +430,6 @@ elif page == "➕ Add Video":
                 video.transcript_source = source
                 st.session_state["pending_video"] = video
                 st.success(f"✅ Transcript extracted via `{source}`")
-
         if video.transcript_text:
             _finish_add_video(video)
         else:
@@ -441,14 +457,13 @@ elif page == "➕ Add Video":
                         st.rerun()
 
 
-# ── Library ──────────────────────────────────────────────────────────────────
+# ── Library
 elif page == "📚 Library":
     if "detail_video_id" in st.session_state:
         v = storage.get_video(st.session_state["detail_video_id"])
         if v:
             _render_detail_page(v)
             st.stop()
-
     st.title("📚 Your Library")
     col_f, col_s = st.columns([2, 1])
     with col_f:
@@ -457,7 +472,6 @@ elif page == "📚 Library":
         )
     with col_s:
         sort_by = st.selectbox("Sort", ["Recently updated", "Title A–Z"])
-
     videos = (
         storage.get_all_videos()
         if status_filter == "All"
@@ -468,7 +482,6 @@ elif page == "📚 Library":
         if sort_by == "Title A–Z"
         else sorted(videos, key=lambda v: v.updated_at, reverse=True)
     )
-
     if not videos:
         st.info("📦 No videos for this filter.")
     else:
@@ -479,14 +492,13 @@ elif page == "📚 Library":
                 _render_video_card(video)
 
 
-# ── Search ───────────────────────────────────────────────────────────────────
+# ── Search
 elif page == "🔍 Search":
     if "detail_video_id" in st.session_state:
         v = storage.get_video(st.session_state["detail_video_id"])
         if v:
             _render_detail_page(v)
             st.stop()
-
     st.title("🔍 Search Library")
     query = st.text_input(
         "Search by title, channel, notes, or summary",
@@ -504,7 +516,7 @@ elif page == "🔍 Search":
             st.info("🔍 No results found.")
 
 
-# ── Settings ─────────────────────────────────────────────────────────────────
+# ── Settings
 elif page == "⚙️ Settings":
     st.title("⚙️ Settings")
     st.info("🔑 API keys are loaded from `.env`. They are never uploaded to GitHub.")
@@ -514,16 +526,18 @@ elif page == "⚙️ Settings":
     openai_key  = os.getenv("OPENAI_API_KEY", "")
     ai_provider = os.getenv("AI_PROVIDER", "none")
 
+    ff_ver = ffmpeg_version()
+    ff_status = f"✅ {ff_ver.split('Copyright')[0].strip()}" if ff_ver else "❌ Not found on PATH"
+
     try:
         import yt_dlp as _ytdlp
-        ytdlp_version = _ytdlp.version.__version__
-        ytdlp_status  = f"✅ {ytdlp_version}"
+        ytdlp_status = f"✅ {_ytdlp.version.__version__}"
     except ImportError:
-        ytdlp_status = "❌ Not installed (`py -3.11 -m pip install yt-dlp`)"
+        ytdlp_status = "❌ Not installed"
 
     try:
         import youtube_transcript_api as _yta  # noqa: F401
-        yta_status = "✅ Installed (fallback)"
+        yta_status = "✅ Installed"
     except ImportError:
         yta_status = "⚠️ Not installed"
 
@@ -534,10 +548,17 @@ elif page == "⚙️ Settings":
     st.write(f"🔑 **OpenAI Key:** {'✅ Set' if openai_key else '➖ Not set (optional)'}")
     st.write(f"📦 **yt-dlp:** {ytdlp_status}")
     st.write(f"📦 **youtube-transcript-api:** {yta_status}")
+    st.write(f"📦 **FFmpeg:** {ff_status}")
     st.write(f"💾 **Storage path:** `{storage_path}`")
     st.write(f"💾 **Storage size:** {storage.get_storage_size()}")
     st.write(f"📊 **Total saved:** {sum(storage.count_by_status().values())}")
     st.write(f"📂 **Downloads folder:** `{root / 'downloads'}`")
+
+    if not ff_ver:
+        st.warning(
+            "⚠️ FFmpeg not detected. Download feature works in limited mode.\n"
+            "Install: `winget install --id Gyan.FFmpeg -e` then restart the app."
+        )
 
     st.divider()
     st.subheader("🔗 Get Free API Keys")
@@ -552,10 +573,8 @@ elif page == "⚙️ Settings":
     st.divider()
     st.subheader("⚠️ Danger Zone")
     st.warning("🗑️ Permanently deletes all saved videos.")
-
     if "clear_armed" not in st.session_state:
         st.session_state["clear_armed"] = False
-
     if not st.session_state["clear_armed"]:
         if st.button("🗑️ Clear All Data", type="secondary"):
             st.session_state["clear_armed"] = True
