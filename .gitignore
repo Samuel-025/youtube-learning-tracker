@@ -1,0 +1,45 @@
+# Environment
+.env
+*.env
+
+# Local data (personal storage — never commit)
+data/*.json
+!data/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Pytest
+.pytest_cache/
+.cache/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
