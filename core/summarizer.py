@@ -104,7 +104,7 @@ class Summarizer:
     def _summarize_openai(self, transcript: str, title: str) -> tuple[list, str]:
         try:
             from openai import OpenAI  # type: ignore[import-untyped]
-                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             prompt = self._build_prompt(transcript, title)
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
