@@ -14,6 +14,12 @@
 data/
 !data/.gitkeep
 
+# ── Downloaded audio/video files ─────────────
+# Any file inside downloads/ is personal media.
+# Only the .gitkeep placeholder is allowed.
+downloads/
+!downloads/.gitkeep
+
 # Any stray JSON files at root level
 *.json
 !package.json
@@ -119,6 +125,23 @@ desktop.ini
 # =============================================
 .ipynb_checkpoints/
 *.ipynb
+
+# =============================================
+# MEDIA FILES (downloaded audio/video)
+# =============================================
+*.mp3
+*.mp4
+*.mkv
+*.webm
+*.m4a
+*.opus
+*.flac
+*.wav
+*.aac
+*.ogg
+*.avi
+*.mov
+*.wmv
 
 # =============================================
 # TEMP / SCRATCH

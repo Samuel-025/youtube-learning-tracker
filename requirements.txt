@@ -1,14 +1,41 @@
+# =============================================
 # Web App
+# =============================================
 streamlit>=1.35.0
 
+# =============================================
 # YouTube API
+# =============================================
 google-api-python-client>=2.100.0
 
+# =============================================
 # Transcript extraction
-yt-dlp>=2024.1.0                  # primary: downloads subs directly, no API key needed
-youtube-transcript-api>=1.0.0    # fallback
+# =============================================
+yt-dlp>=2024.1.0                  # primary: downloads subs + audio/video, no API key needed
+youtube-transcript-api>=1.0.0    # fallback transcript extractor
 
-# AI Summarization — all optional, install what you use
+# =============================================
+# Audio / Video downloading (used by core/downloader.py)
+# =============================================
+# yt-dlp is listed above — it handles all downloading.
+#
+# FFmpeg is required for:
+#   - merging video+audio streams (720p / 1080p / best)
+#   - converting audio to MP3
+#
+# FFmpeg is a SYSTEM binary, NOT a pip package.
+# Install it with ONE of these commands:
+#
+#   Windows (winget):      winget install --id Gyan.FFmpeg -e
+#   Windows (choco):       choco install ffmpeg -y
+#   macOS (brew):          brew install ffmpeg
+#   Ubuntu/Debian:         sudo apt install ffmpeg -y
+#
+# DO NOT run: pip install ffmpeg  ← that installs a useless stub package
+
+# =============================================
+# AI Summarization — all optional
+# =============================================
 # Groq is free and recommended (no credit card required)
 groq>=0.8.0
 
@@ -18,13 +45,19 @@ anthropic>=0.25.0
 # Uncomment to use OpenAI GPT
 openai>=1.30.0
 
+# =============================================
 # CLI
+# =============================================
 rich>=13.7.0
 
+# =============================================
 # Utilities
+# =============================================
 python-dotenv>=1.0.0
 requests>=2.31.0
 isodate>=0.6.1
 
-# Dev
+# =============================================
+# Dev / Testing
+# =============================================
 pytest>=8.0.0
