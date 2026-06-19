@@ -11,7 +11,8 @@ google-api-python-client>=2.100.0
 # =============================================
 # Transcript extraction
 # =============================================
-yt-dlp>=2024.1.0                  # primary: downloads subs + audio/video, no API key needed
+yt-dlp>=2024.11.0                 # primary: downloads subs + audio/video, no API key needed
+                                  # 2024.11+ required for current JS challenge solver
 youtube-transcript-api>=1.0.0    # fallback transcript extractor
 
 # =============================================
@@ -31,7 +32,7 @@ youtube-transcript-api>=1.0.0    # fallback transcript extractor
 #   macOS (brew):          brew install ffmpeg
 #   Ubuntu/Debian:         sudo apt install ffmpeg -y
 #
-# DO NOT run: pip install ffmpeg  ← that installs a useless stub package
+# DO NOT run: pip install ffmpeg  <- that installs a useless stub package
 
 # =============================================
 # AI Summarization — all optional

@@ -125,6 +125,15 @@ class Storage:
         video.update_timestamp()
         self.save_video(video)
 
+    def clear_all_videos(self) -> None:
+        """Delete every video AND wipe all collection video_ids in one atomic pass."""
+        with _STORAGE_LOCK:
+            self._write({})
+            coll_data = self._read_collections()
+            for coll_dict in coll_data.values():
+                coll_dict["video_ids"] = []
+            self._write_collections(coll_data)
+
     # ------------------------------------------------------------------ #
     #  CRUD — Collections                                                  #
     # ------------------------------------------------------------------ #
@@ -178,7 +187,6 @@ class Storage:
             ids = data[coll_id].setdefault("video_ids", [])
             if video_id not in ids:
                 ids.append(video_id)
-                # update timestamp
                 from datetime import datetime
                 data[coll_id]["updated_at"] = datetime.now().isoformat()
             self._write_collections(data)
@@ -218,18 +226,22 @@ class Storage:
     # ------------------------------------------------------------------ #
 
     def search_videos(self, query: str) -> list[Video]:
-        """Case-insensitive search across title, channel, notes, and tags."""
+        """Case-insensitive search across title, channel, notes, tags, bullets, and auto_notes."""
         q = query.lower()
         results: list[Video] = []
         for v in self.get_all_videos():
-            notes = (v.manual_notes or "").lower()
-            tags  = [t.lower() for t in (v.tags or [])]
+            notes       = (v.manual_notes or "").lower()
+            tags        = [t.lower() for t in (v.tags or [])]
+            bullets     = " ".join(v.summary_bullets or []).lower()
+            auto_notes  = " ".join(v.auto_notes or []).lower()
             if (
                 q in v.title.lower()
                 or q in v.channel.lower()
                 or q in notes
                 or any(q in t for t in tags)
                 or q in (v.summary_paragraph or "").lower()
+                or q in bullets
+                or q in auto_notes
             ):
                 results.append(v)
         return results

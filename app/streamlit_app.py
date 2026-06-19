@@ -76,7 +76,6 @@ def _render_progress_bar(video: Video, compact: bool = False) -> None:
     watched_fmt = _fmt_seconds(video.watch_progress_sec)
     total_fmt   = _fmt_seconds(video.duration_sec)
     if compact:
-        # Always show bar — 0% shows "Not started" so Saved videos aren't invisible
         if pct >= 100:
             st.progress(1.0, text=f"⏱ {total_fmt} / {total_fmt} (100%)")
         elif pct > 0:
@@ -111,20 +110,15 @@ def _apply_progress(video: Video, new_sec: int) -> str | None:
     celebration: str | None = None
 
     if new_sec >= video.duration_sec:
-        # ── 100% reached ───────────────────────────────────────────────
         if video.status != WatchStatus.COMPLETED:
             video.status = WatchStatus.COMPLETED
             celebration  = "🎉 Marked as **Completed**!"
     elif new_sec > 0:
-        # ── Partial progress ───────────────────────────────────────────
         if video.status == WatchStatus.SAVED:
             video.status = WatchStatus.WATCHING
         elif video.status == WatchStatus.COMPLETED:
-            # User dragged back below 100% — un-complete it
             video.status = WatchStatus.WATCHING
-        # dropped / rewatch / watching → leave untouched
     else:
-        # ── Reset to 0 ─────────────────────────────────────────────────
         if video.status in (WatchStatus.COMPLETED, WatchStatus.WATCHING):
             video.status = WatchStatus.SAVED
 
@@ -161,7 +155,6 @@ def _render_progress_controls(video: Video) -> None:
             if st.button(label, key=f"qset_{vid}_{label}", use_container_width=True):
                 celebration = _apply_progress(video, val)
                 storage.update_video(video)
-                # Clear stale selectbox so it re-renders with the new status
                 st.session_state.pop(f"detail_status_{vid}", None)
                 st.session_state.pop(f"status_{vid}", None)
                 if celebration:
@@ -172,7 +165,6 @@ def _render_progress_controls(video: Video) -> None:
     if st.button("💾 Save Progress", key=f"save_prog_{vid}", type="primary"):
         celebration = _apply_progress(video, new_sec)
         storage.update_video(video)
-        # Clear stale selectbox so it re-renders with the new status
         st.session_state.pop(f"detail_status_{vid}", None)
         st.session_state.pop(f"status_{vid}", None)
         if celebration:
@@ -255,12 +247,18 @@ def _render_download_tab(video: Video) -> None:
                 storage.update_video(video)
                 st.session_state[dl_key] = False
                 st.success(f"✅ Downloaded: `{out_path.name}`")
+                # Surface any JS-challenge / signature warnings from yt-dlp
+                if downloader.last_warnings:
+                    with st.expander("⚠️ yt-dlp warnings", expanded=False):
+                        for w in downloader.last_warnings:
+                            st.caption(w)
                 with open(out_path, "rb") as f:
                     file_bytes = f.read()
                 fname = out_path.name
                 mime  = "audio/mpeg" if fname.endswith(".mp3") else ("audio/mp4" if fname.endswith(".m4a") else "video/mp4")
                 st.download_button(label="📥 Save to computer", data=file_bytes, file_name=fname, mime=mime, key=f"dl_save_new_{vid}")
             except RuntimeError as exc:
+                # fix: always reset dl_key on failure so the button is usable again
                 st.session_state[dl_key] = False
                 st.error(f"❌ Download failed:\n\n{exc}")
 
@@ -268,13 +266,10 @@ def _render_download_tab(video: Video) -> None:
 def _render_detail_page(video: Video) -> None:
     vid = video.video_id
 
-    # ── Always re-fetch from storage so we have the latest status/progress.
     fresh = storage.get_video(vid)
     if fresh is not None:
         video = fresh
 
-    # ── KEY FIX: If session_state holds a stale selectbox value that differs
-    #    from what storage says, delete it so Streamlit uses the fresh index.
     detail_key = f"detail_status_{vid}"
     if detail_key in st.session_state and st.session_state[detail_key] != video.status.value:
         del st.session_state[detail_key]
@@ -285,7 +280,8 @@ def _render_detail_page(video: Video) -> None:
     col1, col2 = st.columns([1, 2])
     with col1:
         if video.thumbnail_url:
-            st.image(video.thumbnail_url, width="stretch")
+            # fix: use_container_width replaces deprecated width='stretch'
+            st.image(video.thumbnail_url, use_container_width=True)
     with col2:
         st.title(video.title)
         st.caption(f"📺 {video.channel}  ·  ⏱ {video.duration}  ·  {(video.published_at or '')[:10]}")
@@ -303,7 +299,6 @@ def _render_detail_page(video: Video) -> None:
             st.rerun()
         _render_progress_bar(video, compact=False)
 
-        # ── Collections badge row
         colls = storage.get_collections_for_video(vid)
         if colls:
             badges = "  ".join(f"`{c.emoji} {c.name}`" for c in colls)
@@ -404,7 +399,6 @@ def _render_detail_page(video: Video) -> None:
         _render_progress_controls(video)
 
     with tabs[5]:
-        # ── Collections tab on detail page
         st.markdown("### 📁 Collections")
         all_colls = storage.get_all_collections()
         current_colls = storage.get_collections_for_video(vid)
@@ -434,7 +428,8 @@ def _render_detail_page(video: Video) -> None:
 def _render_video_card(video: Video) -> None:
     with st.container(border=True):
         if video.thumbnail_url:
-            st.image(video.thumbnail_url, width="stretch")
+            # fix: use_container_width replaces deprecated width='stretch'
+            st.image(video.thumbnail_url, use_container_width=True)
         title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
         st.markdown(f"**{title_display}**")
         st.caption(f"{video.channel} · {video.duration}")
@@ -451,7 +446,8 @@ def _render_video_card(video: Video) -> None:
             video.status = WatchStatus(new_status)
             storage.update_video(video)
             st.rerun()
-        if st.button("📌 View Details", key=f"view_{video.video_id}", width="stretch"):
+        # fix: use_container_width replaces invalid width='stretch'
+        if st.button("📌 View Details", key=f"view_{video.video_id}", use_container_width=True):
             st.session_state["detail_video_id"] = video.video_id
             st.rerun()
 
@@ -543,7 +539,8 @@ elif page == "➕ Add Video":
     if submitted and url:
         with st.spinner("📡 Fetching video info..."):
             try:
-                fetched = fetcher.fetch_video(url)
+                # fix: pass storage so already-saved videos skip the API call
+                fetched = fetcher.fetch_video(url, storage=storage)
             except Exception as exc:
                 st.error(f"❌ Failed to fetch: {exc}")
                 st.stop()
@@ -555,7 +552,8 @@ elif page == "➕ Add Video":
         col1, col2 = st.columns([1, 2])
         with col1:
             if video.thumbnail_url:
-                st.image(video.thumbnail_url, width="stretch")
+                # fix: use_container_width replaces deprecated width='stretch'
+                st.image(video.thumbnail_url, use_container_width=True)
         with col2:
             st.markdown(f"**Channel:** {video.channel}")
             st.markdown(f"**Duration:** {video.duration}")
@@ -570,6 +568,7 @@ elif page == "➕ Add Video":
                 st.success(f"✅ Transcript extracted via `{source}`")
         if video.transcript_text:
             _finish_add_video(video)
+            st.stop()  # fix: prevent double-render of the transcript fallback UI
         else:
             st.warning("⚠️ Auto transcript unavailable. Paste or upload below.")
             paste_tab, upload_tab = st.tabs(["Paste Transcript", "Upload .txt"])
@@ -597,7 +596,6 @@ elif page == "➕ Add Video":
 
 # ── Library
 elif page == "📚 Library":
-    # ── Route to detail FIRST — before rendering any cards (fixes lag/stuck)
     if "detail_video_id" in st.session_state:
         v = storage.get_video(st.session_state["detail_video_id"])
         if v:
@@ -633,14 +631,12 @@ elif page == "📚 Library":
 
 # ── Collections
 elif page == "📁 Collections":
-    # ── Route to detail FIRST — before rendering collection UI (fixes lag/stuck)
     if "detail_video_id" in st.session_state:
         v = storage.get_video(st.session_state["detail_video_id"])
         if v:
             _render_detail_page(v)
             st.stop()
 
-    # ── Viewing a single collection
     if "active_collection_id" in st.session_state:
         coll = storage.get_collection(st.session_state["active_collection_id"])
         if coll:
@@ -680,7 +676,8 @@ elif page == "📁 Collections":
                     with v_cols[i % 3]:
                         with st.container(border=True):
                             if video.thumbnail_url:
-                                st.image(video.thumbnail_url, width="stretch")
+                                # fix: use_container_width replaces deprecated width='stretch'
+                                st.image(video.thumbnail_url, use_container_width=True)
                             title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
                             st.markdown(f"**{title_display}**")
                             st.caption(f"{video.channel} · {video.duration}")
@@ -691,6 +688,7 @@ elif page == "📁 Collections":
                                     st.session_state["detail_video_id"] = video.video_id
                                     st.rerun()
                             with btn_cols[1]:
+                                # fix: use_container_width replaces deprecated width='stretch'
                                 if st.button("➖ Remove", key=f"coll_rm_{coll.id}_{video.video_id}", use_container_width=True):
                                     storage.remove_video_from_collection(coll.id, video.video_id)
                                     st.rerun()
@@ -716,7 +714,6 @@ elif page == "📁 Collections":
                         st.caption(f"...and {len(filtered) - 20} more. Use the filter to narrow down.")
             st.stop()
 
-    # ── Collections list view
     st.title("📁 Collections")
     all_colls = storage.get_all_collections()
 
@@ -785,14 +782,13 @@ elif page == "📁 Collections":
 
 # ── Search
 elif page == "🔍 Search":
-    # ── Route to detail FIRST — before rendering search results (fixes lag/stuck)
     if "detail_video_id" in st.session_state:
         v = storage.get_video(st.session_state["detail_video_id"])
         if v:
             _render_detail_page(v)
             st.stop()
     st.title("🔍 Search Library")
-    query = st.text_input("Search by title, channel, notes, or summary", placeholder="e.g. Python, React, machine learning")
+    query = st.text_input("Search by title, channel, notes, summary, or keywords in auto-notes", placeholder="e.g. Python, React, machine learning")
     if query:
         results = storage.search_videos(query)
         st.write(f"**{len(results)} result(s)** for `{query}`")
@@ -901,7 +897,7 @@ elif page == "⚙️ Settings":
 
     st.divider()
     st.subheader("⚠️ Danger Zone")
-    st.warning("🗑️ Permanently deletes all saved videos.")
+    st.warning("🗑️ Permanently deletes all saved videos and clears all collection contents.")
     if "clear_armed" not in st.session_state:
         st.session_state["clear_armed"] = False
     if not st.session_state["clear_armed"]:
@@ -913,8 +909,8 @@ elif page == "⚙️ Settings":
         col_yes, col_no = st.columns(2)
         with col_yes:
             if st.button("✅ Yes, delete everything", type="primary"):
-                for v in storage.get_all_videos():
-                    storage.delete_video(v.video_id)
+                # fix: use atomic clear_all_videos() — wipes videos + collection refs in one pass
+                storage.clear_all_videos()
                 st.session_state["clear_armed"] = False
                 st.success("🗑️ Library cleared.")
                 st.rerun()

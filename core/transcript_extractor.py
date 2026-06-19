@@ -2,6 +2,7 @@
 
 import os
 import re
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
@@ -78,7 +79,7 @@ class TranscriptExtractor:
         url = f"https://www.youtube.com/watch?v={video_id}"
 
         # fix #12: ignore_cleanup_errors avoids PermissionError on Windows when
-        # yt-dlp background threads haven’t released file handles yet.
+        # yt-dlp background threads haven't released file handles yet.
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             for sub_type, _ydl_key in [("manual", "subtitles"), ("auto", "automatic_captions")]:
                 vtt_path = self._download_vtt(url, tmpdir, sub_type)
@@ -108,6 +109,11 @@ class TranscriptExtractor:
             "subtitlesformat": "vtt",
             "subtitleslangs": lang_codes,
         }
+
+        # fix: pass ffmpeg_location so yt-dlp can find ffmpeg on Windows
+        ff_path = shutil.which("ffmpeg")
+        if ff_path:
+            ydl_opts["ffmpeg_location"] = str(Path(ff_path).parent)
 
         if sub_type == "manual":
             ydl_opts["writesubtitles"] = True
