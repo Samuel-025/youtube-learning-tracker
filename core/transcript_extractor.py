@@ -30,7 +30,9 @@ class TranscriptExtractor:
             return "", "unavailable (youtube-transcript-api not installed)"
 
         try:
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+            # v1.x API: instantiate first, then call instance method
+            ytt_api = YouTubeTranscriptApi()
+            transcript_list = ytt_api.list_transcripts(video_id)
 
             # Try preferred languages first
             try:

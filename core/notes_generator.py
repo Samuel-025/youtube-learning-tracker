@@ -35,20 +35,21 @@ Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
 
             if self.provider == "anthropic":
                 import anthropic
+                from anthropic.types import TextBlock
                 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
                 msg = client.messages.create(
                     model="claude-3-haiku-20240307",
                     max_tokens=1024,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                # Filter to TextBlock only — ThinkingBlock/ToolUseBlock etc. have no .text
+                # isinstance narrows the union — only TextBlock has .text
                 for block in msg.content:
-                    if hasattr(block, "text"):
-                        raw_text = str(block.text)
+                    if isinstance(block, TextBlock):
+                        raw_text = block.text
                         break
 
             elif self.provider == "openai":
-                from openai import OpenAI
+                from openai import OpenAI  # type: ignore[import-untyped]
                 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
                 r = client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -58,7 +59,7 @@ Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
                 raw_text = r.choices[0].message.content or ""
 
             elif self.provider == "groq":
-                from groq import Groq
+                from groq import Groq  # type: ignore[import-untyped]
                 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
                 r = client.chat.completions.create(
                     model="llama3-8b-8192",
