@@ -3,6 +3,9 @@
 import os
 from typing import Optional
 
+# Current active Groq model (updated when Groq deprecates models)
+GROQ_MODEL = "llama-3.1-8b-instant"
+
 
 class NotesGenerator:
     def __init__(self, provider: Optional[str] = None):
@@ -42,7 +45,6 @@ Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
                     max_tokens=1024,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                # isinstance narrows the union — only TextBlock has .text
                 for block in msg.content:
                     if isinstance(block, TextBlock):
                         raw_text = block.text
@@ -62,7 +64,7 @@ Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
                 from groq import Groq  # type: ignore[import-untyped]
                 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
                 r = client.chat.completions.create(
-                    model="llama3-8b-8192",
+                    model=GROQ_MODEL,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=1024,
                 )

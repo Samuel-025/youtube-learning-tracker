@@ -7,6 +7,9 @@ from typing import Optional
 # Matches [MM:SS], [H:MM:SS], [HH:MM:SS], [HHH:MM:SS] etc.
 _TIMESTAMP_RE = re.compile(r"\[\d+:\d{2}(?::\d{2})?\]\s*")
 
+# Current active Groq model (updated when Groq deprecates models)
+GROQ_MODEL = "llama-3.1-8b-instant"
+
 
 class Summarizer:
     def __init__(self, provider: Optional[str] = None):
@@ -38,7 +41,7 @@ class Summarizer:
                 from groq import Groq  # type: ignore[import-untyped]
                 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
                 r = client.chat.completions.create(
-                    model="llama3-8b-8192",
+                    model=GROQ_MODEL,
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=512,
                 )
@@ -101,7 +104,7 @@ class Summarizer:
     def _summarize_openai(self, transcript: str, title: str) -> tuple[list, str]:
         try:
             from openai import OpenAI  # type: ignore[import-untyped]
-            client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             prompt = self._build_prompt(transcript, title)
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -119,7 +122,7 @@ class Summarizer:
             client = Groq(api_key=os.getenv("GROQ_API_KEY"))
             prompt = self._build_prompt(transcript, title)
             response = client.chat.completions.create(
-                model="llama3-8b-8192",
+                model=GROQ_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1024,
             )
