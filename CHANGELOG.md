@@ -13,6 +13,7 @@ All notable changes to YouTube Learning Tracker are documented here.
 ### Added
 - **Collections / Playlists**
   - New `models/collection.py` — `Collection` dataclass with `id`, `name`, `emoji`, `description`, `video_ids`, timestamps
+  - `Collection` now exported from `models/__init__.py`
   - Collections stored in `data/collections.json` (separate from `videos.json`, gitignored)
   - **`core/storage.py`** extended with full collections CRUD:
     - `save_collection`, `get_collection`, `get_all_collections`, `update_collection`, `delete_collection`
