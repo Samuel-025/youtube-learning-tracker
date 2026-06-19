@@ -152,7 +152,7 @@ def _render_progress_controls(video: Video) -> None:
     ]
     for col, (label, val) in zip(q_cols, quick_values):
         with col:
-            if st.button(label, key=f"qset_{vid}_{label}", use_container_width=True):
+            if st.button(label, key=f"qset_{vid}_{label}", width="stretch"):
                 celebration = _apply_progress(video, val)
                 storage.update_video(video)
                 st.session_state.pop(f"detail_status_{vid}", None)
@@ -280,8 +280,7 @@ def _render_detail_page(video: Video) -> None:
     col1, col2 = st.columns([1, 2])
     with col1:
         if video.thumbnail_url:
-            # fix: use_container_width replaces deprecated width='stretch'
-            st.image(video.thumbnail_url, use_container_width=True)
+            st.image(video.thumbnail_url, width="stretch")
     with col2:
         st.title(video.title)
         st.caption(f"📺 {video.channel}  ·  ⏱ {video.duration}  ·  {(video.published_at or '')[:10]}")
@@ -428,8 +427,7 @@ def _render_detail_page(video: Video) -> None:
 def _render_video_card(video: Video) -> None:
     with st.container(border=True):
         if video.thumbnail_url:
-            # fix: use_container_width replaces deprecated width='stretch'
-            st.image(video.thumbnail_url, use_container_width=True)
+            st.image(video.thumbnail_url, width="stretch")
         title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
         st.markdown(f"**{title_display}**")
         st.caption(f"{video.channel} · {video.duration}")
@@ -446,8 +444,7 @@ def _render_video_card(video: Video) -> None:
             video.status = WatchStatus(new_status)
             storage.update_video(video)
             st.rerun()
-        # fix: use_container_width replaces invalid width='stretch'
-        if st.button("📌 View Details", key=f"view_{video.video_id}", use_container_width=True):
+        if st.button("📌 View Details", key=f"view_{video.video_id}", width="stretch"):
             st.session_state["detail_video_id"] = video.video_id
             st.rerun()
 
@@ -552,8 +549,7 @@ elif page == "➕ Add Video":
         col1, col2 = st.columns([1, 2])
         with col1:
             if video.thumbnail_url:
-                # fix: use_container_width replaces deprecated width='stretch'
-                st.image(video.thumbnail_url, use_container_width=True)
+                st.image(video.thumbnail_url, width="stretch")
         with col2:
             st.markdown(f"**Channel:** {video.channel}")
             st.markdown(f"**Duration:** {video.duration}")
@@ -676,20 +672,18 @@ elif page == "📁 Collections":
                     with v_cols[i % 3]:
                         with st.container(border=True):
                             if video.thumbnail_url:
-                                # fix: use_container_width replaces deprecated width='stretch'
-                                st.image(video.thumbnail_url, use_container_width=True)
+                                st.image(video.thumbnail_url, width="stretch")
                             title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
                             st.markdown(f"**{title_display}**")
                             st.caption(f"{video.channel} · {video.duration}")
                             _render_progress_bar(video, compact=True)
                             btn_cols = st.columns(2)
                             with btn_cols[0]:
-                                if st.button("📌 View", key=f"coll_view_{coll.id}_{video.video_id}", use_container_width=True):
+                                if st.button("📌 View", key=f"coll_view_{coll.id}_{video.video_id}", width="stretch"):
                                     st.session_state["detail_video_id"] = video.video_id
                                     st.rerun()
                             with btn_cols[1]:
-                                # fix: use_container_width replaces deprecated width='stretch'
-                                if st.button("➖ Remove", key=f"coll_rm_{coll.id}_{video.video_id}", use_container_width=True):
+                                if st.button("➖ Remove", key=f"coll_rm_{coll.id}_{video.video_id}", width="stretch"):
                                     storage.remove_video_from_collection(coll.id, video.video_id)
                                     st.rerun()
 
@@ -707,7 +701,7 @@ elif page == "📁 Collections":
                         with a_cols[0]:
                             st.caption(f"{v.title[:60]}  ·  {v.channel}")
                         with a_cols[1]:
-                            if st.button("➕ Add", key=f"add_to_coll_{coll.id}_{v.video_id}", use_container_width=True):
+                            if st.button("➕ Add", key=f"add_to_coll_{coll.id}_{v.video_id}", width="stretch"):
                                 storage.add_video_to_collection(coll.id, v.video_id)
                                 st.rerun()
                     if len(filtered) > 20:
@@ -759,23 +753,23 @@ elif page == "📁 Collections":
                             st.progress(pct, text=f"{pct*100:.0f}% watched")
                     card_cols = st.columns(2)
                     with card_cols[0]:
-                        if st.button("📂 Open", key=f"open_coll_{coll.id}", use_container_width=True, type="primary"):
+                        if st.button("📂 Open", key=f"open_coll_{coll.id}", width="stretch", type="primary"):
                             st.session_state["active_collection_id"] = coll.id
                             st.rerun()
                     with card_cols[1]:
-                        if st.button("🗑️ Delete", key=f"del_coll_{coll.id}", use_container_width=True):
+                        if st.button("🗑️ Delete", key=f"del_coll_{coll.id}", width="stretch"):
                             st.session_state[f"del_armed_{coll.id}"] = True
                             st.rerun()
                     if st.session_state.get(f"del_armed_{coll.id}"):
                         st.error(f'Delete "{coll.name}"? Videos are kept.')
                         yes_col, no_col = st.columns(2)
                         with yes_col:
-                            if st.button("✅ Yes", key=f"del_yes_{coll.id}", use_container_width=True):
+                            if st.button("✅ Yes", key=f"del_yes_{coll.id}", width="stretch"):
                                 storage.delete_collection(coll.id)
                                 st.session_state.pop(f"del_armed_{coll.id}", None)
                                 st.rerun()
                         with no_col:
-                            if st.button("❌ No", key=f"del_no_{coll.id}", use_container_width=True):
+                            if st.button("❌ No", key=f"del_no_{coll.id}", width="stretch"):
                                 st.session_state.pop(f"del_armed_{coll.id}", None)
                                 st.rerun()
 
