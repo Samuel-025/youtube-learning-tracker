@@ -2,7 +2,6 @@
 
 import os
 import re
-import json
 import tempfile
 from pathlib import Path
 from typing import Any, Optional
@@ -79,14 +78,12 @@ class TranscriptExtractor:
         url = f"https://www.youtube.com/watch?v={video_id}"
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Try manual subs first, then auto-generated
-            for sub_type, ydl_key in [("manual", "subtitles"), ("auto", "automatic_captions")]:
+            for sub_type, _ydl_key in [("manual", "subtitles"), ("auto", "automatic_captions")]:
                 vtt_path = self._download_vtt(url, tmpdir, sub_type)
                 if vtt_path:
                     text = self._parse_vtt(vtt_path)
                     if text:
-                        src = f"yt-dlp ({sub_type} subs)"
-                        return text, src
+                        return text, f"yt-dlp ({sub_type} subs)"
 
         return "", ""
 
@@ -94,7 +91,8 @@ class TranscriptExtractor:
         """Use yt-dlp to download the best available subtitle file to outdir."""
         lang_codes = self.preferred_languages + ["en"]
 
-        # Typed as dict[str, Any] so Pylance resolves yt_dlp's _Params type correctly
+        # dict[str, Any] is correct; # type: ignore silences Pylance's false-positive
+        # caused by yt_dlp having no type stubs (it invents an incompatible _Params type).
         ydl_opts: dict[str, Any] = {
             "skip_download": True,
             "quiet": True,
@@ -110,12 +108,11 @@ class TranscriptExtractor:
             ydl_opts["writeautomaticsub"] = True
 
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
                 ydl.download([url])
         except Exception:
             pass
 
-        # Find the downloaded .vtt file
         for f in Path(outdir).glob("*.vtt"):
             return f
         return None
@@ -132,46 +129,39 @@ class TranscriptExtractor:
         for line in lines:
             line = line.strip()
 
-            # Timestamp line: 00:00:01.000 --> 00:00:04.000
             if _TIMESTAMP_LINE.match(line):
-                # Save previous segment
                 if current_start is not None and current_text:
-                    text = " ".join(current_text).strip()
-                    if text:
-                        segments.append((current_start, text))
-                # Parse new start time
+                    txt = " ".join(current_text).strip()
+                    if txt:
+                        segments.append((current_start, txt))
                 start_str = line.split("-->")[0].strip()
                 current_start = self._vtt_time_to_seconds(start_str)
                 current_text = []
 
             elif line and not line.startswith("WEBVTT") and not line.isdigit() and "-->" not in line:
-                # Content line — strip VTT markup tags
                 clean = _VTT_TAG_RE.sub("", line).strip()
                 if clean and clean not in current_text:
                     current_text.append(clean)
 
-        # Flush last segment
         if current_start is not None and current_text:
-            text = " ".join(current_text).strip()
-            if text:
-                segments.append((current_start, text))
+            txt = " ".join(current_text).strip()
+            if txt:
+                segments.append((current_start, txt))
 
-        # Deduplicate consecutive identical lines (auto-subs repeat a lot)
         deduped: list[tuple[float, str]] = []
         prev = ""
-        for start, text in segments:
-            if text != prev:
-                deduped.append((start, text))
-                prev = text
+        for start, txt in segments:
+            if txt != prev:
+                deduped.append((start, txt))
+                prev = txt
 
-        # Format with timestamps
         parts: list[str] = []
-        for start, text in deduped:
+        for start, txt in deduped:
             total_sec = int(start)
             hours, rem = divmod(total_sec, 3600)
             mins, secs = divmod(rem, 60)
             ts = f"[{hours}:{mins:02d}:{secs:02d}]" if hours else f"[{mins:02d}:{secs:02d}]"
-            parts.append(f"{ts} {text}")
+            parts.append(f"{ts} {txt}")
 
         return "\n".join(parts)
 
@@ -179,7 +169,7 @@ class TranscriptExtractor:
     def _vtt_time_to_seconds(ts: str) -> float:
         """Convert VTT timestamp HH:MM:SS.mmm to total seconds."""
         try:
-            ts = ts.split(".")[0]  # drop milliseconds
+            ts = ts.split(".")[0]
             parts = ts.split(":")
             if len(parts) == 3:
                 h, m, s = parts
@@ -218,17 +208,17 @@ class TranscriptExtractor:
             for entry in entries:
                 if isinstance(entry, dict):
                     start = entry.get("start", 0)
-                    text  = entry.get("text", "").replace("\n", " ").strip()
+                    txt   = entry.get("text", "").replace("\n", " ").strip()
                 else:
                     start = float(getattr(entry, "start", 0))
-                    text  = str(getattr(entry, "text", "")).replace("\n", " ").strip()
-                if not text:
+                    txt   = str(getattr(entry, "text", "")).replace("\n", " ").strip()
+                if not txt:
                     continue
                 total_sec = int(start)
                 hours, rem = divmod(total_sec, 3600)
                 mins, secs = divmod(rem, 60)
                 ts = f"[{hours}:{mins:02d}:{secs:02d}]" if hours else f"[{mins:02d}:{secs:02d}]"
-                parts.append(f"{ts} {text}")
+                parts.append(f"{ts} {txt}")
 
             return "\n".join(parts).strip(), "youtube-transcript-api"
         except Exception:
