@@ -809,10 +809,10 @@ elif page == "⚙️ Settings":
     ff_status = f"✅ {ff_ver.split('Copyright')[0].strip()}" if ff_ver else "❌ Not found on PATH"
 
     try:
-        import yt_dlp as _ytdlp
-        ytdlp_ver    = _ytdlp.version.__version__
+        import importlib.metadata as _meta
+        ytdlp_ver    = _meta.version("yt-dlp")
         ytdlp_status = f"✅ {ytdlp_ver}"
-    except ImportError:
+    except Exception:
         ytdlp_ver    = None
         ytdlp_status = "❌ Not installed"
 
