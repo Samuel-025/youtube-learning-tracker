@@ -24,20 +24,18 @@ class TranscriptExtractor:
         """
         Try to auto-extract transcript.
         Returns (transcript_text, source) where source is 'auto' or 'unavailable'.
+        Transcript text includes [MM:SS] timestamps for each segment.
         """
         if not _YT_AVAILABLE:
             return "", "unavailable (youtube-transcript-api not installed)"
 
         try:
-            # v1.x: instantiate, then call .list() (renamed from list_transcripts)
             ytt_api = YouTubeTranscriptApi()
             transcript_list = ytt_api.list(video_id)
 
-            # Try preferred languages first
             try:
                 transcript = transcript_list.find_transcript(self.preferred_languages)
             except Exception:
-                # Fallback: use first available, try to translate to English
                 available = list(transcript_list)
                 if not available:
                     return "", "unavailable"
@@ -52,17 +50,25 @@ class TranscriptExtractor:
             text_parts: list[str] = []
             for entry in entries:
                 if isinstance(entry, dict):
-                    text_parts.append(entry.get("text", ""))
+                    start = entry.get("start", 0)
+                    text  = entry.get("text", "").replace("\n", " ").strip()
                 else:
-                    # FetchedTranscriptSnippet object (v1.x)
-                    text_parts.append(str(getattr(entry, "text", "")))
+                    start = float(getattr(entry, "start", 0))
+                    text  = str(getattr(entry, "text", "")).replace("\n", " ").strip()
 
-            text = " ".join(text_parts).replace("\n", " ").strip()
+                if not text:
+                    continue
+
+                # Format timestamp as [MM:SS]
+                total_sec = int(start)
+                mins, secs = divmod(total_sec, 60)
+                timestamp = f"[{mins:02d}:{secs:02d}]"
+                text_parts.append(f"{timestamp} {text}")
+
+            text = "\n".join(text_parts).strip()
             return text, "auto"
 
         except Exception:
-            # Catches TranscriptsDisabled, NoTranscriptFound, VideoUnavailable,
-            # RequestBlocked, InvalidVideoId, and all network errors
             return "", "unavailable"
 
     def from_text(self, text: str) -> tuple[str, str]:

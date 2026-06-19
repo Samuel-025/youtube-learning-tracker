@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 
-# ─── Path & env setup (must come before any local imports) ──────────────────
+# ─── Path & env setup (must come before any local imports) ───────────────────────
 root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root))
 load_dotenv(root / ".env")
@@ -18,7 +18,7 @@ from core.summarizer import Summarizer
 from core.notes_generator import NotesGenerator
 from models.video import Video, WatchStatus
 
-# ─── Page config ───────────────────────────────────────────────────────
+# ─── Page config ────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="YouTube Learning Tracker",
     page_icon="📺",
@@ -26,7 +26,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ─── Init services ───────────────────────────────────────────────────────
+# ─── Init services ────────────────────────────────────────────────────────────────────
 storage_path = os.getenv("STORAGE_PATH", str(root / "data" / "videos.json"))
 storage = Storage(storage_path)
 fetcher = YouTubeFetcher()
@@ -44,11 +44,13 @@ STATUS_COLORS = {
 
 
 # ╔════════════════════════════════════════════════════════════════════════╗
-# ║  COMPONENT FUNCTIONS — defined BEFORE any page render calls           ║
+# ║  COMPONENT FUNCTIONS                                                     ║
 # ╚════════════════════════════════════════════════════════════════════════╝
 
 def _render_video_detail(video: Video, store: Storage) -> None:
     """Render full video detail in an expander."""
+    vid = video.video_id
+
     with st.expander(f"📺 {video.title}", expanded=True):
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -63,7 +65,8 @@ def _render_video_detail(video: Video, store: Storage) -> None:
 
         tabs = st.tabs(["📝 Summary", "🗒️ Notes", "📄 Transcript", "❓ Ask"])
 
-        with tabs[0]:  # Summary
+        # ─── Summary tab ───────────────────────────────────────────────────────────────────
+        with tabs[0]:
             if video.summary_bullets:
                 for b in video.summary_bullets:
                     st.markdown(f"• {b}")
@@ -71,7 +74,7 @@ def _render_video_detail(video: Video, store: Storage) -> None:
                 st.info(video.summary_paragraph)
             if not video.summary_bullets and not video.summary_paragraph:
                 if video.transcript_text:
-                    if st.button("✨ Generate Summary", key=f"gen_sum_{video.video_id}"):
+                    if st.button("✨ Generate Summary", key=f"gen_sum_{vid}"):
                         with st.spinner("Generating..."):
                             bullets, paragraph = summarizer.summarize(
                                 video.transcript_text, video.title
@@ -83,26 +86,28 @@ def _render_video_detail(video: Video, store: Storage) -> None:
                 else:
                     st.warning("⚠️ Add a transcript first to generate a summary.")
 
-        with tabs[1]:  # Notes
+        # ─── Notes tab ───────────────────────────────────────────────────────────────────
+        with tabs[1]:
             if video.auto_notes:
-                st.markdown("**🤖 Auto Notes:**")
+                st.markdown("⁠**🤖 Auto Notes:**")
                 for n in video.auto_notes:
                     st.markdown(f"• {n}")
                 st.divider()
-            st.markdown("**✍️ Your Notes:**")
+            st.markdown("⁠**✍️ Your Notes:**")
             new_notes = st.text_area(
                 "notes",
                 value=video.manual_notes or "",
-                key=f"notes_{video.video_id}",
+                key=f"notes_{vid}",
                 height=150,
                 label_visibility="collapsed",
             )
-            if st.button("💾 Save Notes", key=f"save_notes_{video.video_id}"):
+            if st.button("💾 Save Notes", key=f"save_notes_{vid}"):
                 video.manual_notes = new_notes
                 store.update_video(video)
                 st.success("✅ Notes saved.")
 
-        with tabs[2]:  # Transcript
+        # ─── Transcript tab ─────────────────────────────────────────────────────────────
+        with tabs[2]:
             if video.transcript_text:
                 src = video.transcript_source or "unknown"
                 st.caption(f"Source: `{src}`")
@@ -110,43 +115,86 @@ def _render_video_detail(video: Video, store: Storage) -> None:
                     "transcript",
                     value=video.transcript_text,
                     height=300,
-                    key=f"transcript_{video.video_id}",
+                    key=f"transcript_{vid}",
                     disabled=True,
                     label_visibility="collapsed",
                 )
             else:
-                st.info("⚠️ No transcript yet.")
-                pasted = st.text_area(
-                    "Paste transcript text",
-                    height=200,
-                    key=f"paste_{video.video_id}",
-                )
-                if st.button("💾 Save Transcript", key=f"save_trans_{video.video_id}"):
-                    if pasted.strip():
-                        video.transcript_text = pasted.strip()
-                        video.transcript_source = "manual"
-                        store.update_video(video)
-                        st.success("✅ Transcript saved.")
-                        st.rerun()
+                st.info("⚠️ No transcript yet. Paste it below or upload a .txt file.")
 
-        with tabs[3]:  # Ask
+                # — Paste tab —
+                paste_key  = f"paste_{vid}"
+                saved_key  = f"paste_saved_{vid}"
+
+                pasted = st.text_area(
+                    "Paste transcript text here",
+                    height=200,
+                    key=paste_key,
+                )
+
+                col_p, col_u = st.columns(2)
+
+                with col_p:
+                    if st.button("💾 Save Pasted Transcript", key=f"save_paste_{vid}"):
+                        text = pasted.strip()
+                        if text:
+                            video.transcript_text = text
+                            video.transcript_source = "manual"
+                            store.update_video(video)
+                            st.success("✅ Transcript saved!")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Please paste some text first.")
+
+                with col_u:
+                    uploaded = st.file_uploader(
+                        "Or upload a .txt file",
+                        type=["txt"],
+                        key=f"upload_{vid}",
+                    )
+                    if uploaded is not None:
+                        raw = uploaded.read().decode("utf-8")
+                        if st.button("💾 Save Uploaded Transcript", key=f"save_upload_{vid}"):
+                            if raw.strip():
+                                video.transcript_text = raw.strip()
+                                video.transcript_source = "upload"
+                                store.update_video(video)
+                                st.success("✅ Transcript saved from file!")
+                                st.rerun()
+
+        # ─── Ask tab ───────────────────────────────────────────────────────────────────────
+        with tabs[3]:
             if not video.transcript_text:
                 st.warning("⚠️ Add a transcript first to ask questions.")
             else:
+                answer_key = f"qa_answer_{vid}"
+                if answer_key not in st.session_state:
+                    st.session_state[answer_key] = ""
+
                 question = st.text_input(
                     "Ask a question about this video",
                     placeholder="e.g. What is the main concept explained?",
-                    key=f"qa_{video.video_id}",
+                    key=f"qa_input_{vid}",
                 )
-                if st.button("❓ Ask", key=f"ask_{video.video_id}") and question:
-                    with st.spinner("Thinking..."):
-                        try:
-                            answer = summarizer.answer_question(
-                                video.transcript_text, question, video.title
-                            )
-                            st.markdown(f"**Answer:** {answer}")
-                        except Exception as e:
-                            st.error(f"Could not answer: {e}")
+                if st.button("❓ Ask", key=f"ask_btn_{vid}"):
+                    if question.strip():
+                        with st.spinner("Thinking..."):
+                            try:
+                                answer = summarizer.answer_question(
+                                    video.transcript_text, question, video.title
+                                )
+                                st.session_state[answer_key] = answer
+                            except Exception as e:
+                                st.session_state[answer_key] = f"Error: {e}"
+                    else:
+                        st.warning("⚠️ Please type a question first.")
+
+                if st.session_state[answer_key]:
+                    st.markdown("**💡 Answer:**")
+                    st.success(st.session_state[answer_key])
+                    if st.button("🗑️ Clear answer", key=f"clear_ans_{vid}"):
+                        st.session_state[answer_key] = ""
+                        st.rerun()
 
 
 def _render_video_card(video: Video, store: Storage) -> None:
@@ -179,10 +227,10 @@ def _render_video_card(video: Video, store: Storage) -> None:
 
 
 # ╔════════════════════════════════════════════════════════════════════════╗
-# ║  PAGE RENDERS                                                          ║
+# ║  PAGE RENDERS                                                            ║
 # ╚════════════════════════════════════════════════════════════════════════╝
 
-# ─── Sidebar ─────────────────────────────────────────────────────────────────
+# ─── Sidebar ──────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 📺 YT Learning Tracker")
     st.divider()
@@ -200,7 +248,7 @@ with st.sidebar:
     c2.metric("🟡 Watching", counts.get("watching", 0))
 
 
-# ─── Dashboard ───────────────────────────────────────────────────────────────
+# ─── Dashboard ───────────────────────────────────────────────────────────────────────
 if page == "📊 Dashboard":
     st.title("📊 Dashboard")
     videos = storage.get_all_videos()
@@ -224,7 +272,7 @@ if page == "📊 Dashboard":
                 _render_video_card(video, storage)
 
 
-# ─── Add Video ──────────────────────────────────────────────────────────────
+# ─── Add Video ──────────────────────────────────────────────────────────────────────
 elif page == "➕ Add Video":
     st.title("➕ Add New Video")
 
@@ -236,7 +284,7 @@ elif page == "➕ Add Video":
         submitted = st.form_submit_button("Fetch & Save", type="primary")
 
     if submitted and url:
-        # ─ Step 1: Fetch metadata
+        # Step 1: Fetch metadata
         with st.spinner("📡 Fetching video info..."):
             try:
                 fetched = fetcher.fetch_video(url)
@@ -244,13 +292,11 @@ elif page == "➕ Add Video":
                 st.error(f"❌ Failed to fetch video: {e}")
                 st.stop()
 
-        # Guard: fetcher returns Video or None
         if fetched is None:
             st.error("❌ Could not retrieve video info. Check the URL and your YouTube API key.")
             st.stop()
 
-        video: Video = fetched  # now guaranteed non-None
-
+        video: Video = fetched
         st.success(f"✅ Found: **{video.title}** by {video.channel}")
         col1, col2 = st.columns([1, 2])
         with col1:
@@ -262,34 +308,38 @@ elif page == "➕ Add Video":
             published = (video.published_at or "")[:10]
             st.markdown(f"**Published:** {published}")
 
-        # ─ Step 2: Transcript
+        # Step 2: Transcript
         with st.spinner("📄 Extracting transcript..."):
             transcript, source = extractor.extract(video.video_id)
 
         if transcript:
-            st.success(f"✅ Transcript extracted via `{source}`")
+            st.success(f"✅ Transcript extracted via `{source}` with timestamps")
             video.transcript_text = transcript
             video.transcript_source = source
         else:
-            st.warning("⚠️ Auto transcript not available for this video.")
-            tab_paste, tab_upload = st.tabs(["Paste Transcript", "Upload .txt File"])
-            with tab_paste:
-                pasted = st.text_area("Paste transcript text here", height=200)
-                if st.button("Use Pasted Text"):
+            st.warning("⚠️ Auto transcript not available. Paste it below or upload a .txt file.")
+            paste_tab, upload_tab = st.tabs(["Paste Transcript", "Upload .txt File"])
+
+            with paste_tab:
+                pasted = st.text_area("Paste transcript text here", height=200, key="add_paste")
+                if st.button("💾 Use Pasted Text", key="add_paste_btn"):
                     text, src = extractor.from_text(pasted)
-                    video.transcript_text = text
-                    video.transcript_source = src
-                    st.success("✅ Transcript saved.")
-            with tab_upload:
-                uploaded = st.file_uploader("Upload .txt file", type=["txt"])
+                    if text:
+                        video.transcript_text = text
+                        video.transcript_source = src
+                        st.success("✅ Transcript set from pasted text.")
+                    else:
+                        st.warning("⚠️ Nothing to save — paste is empty.")
+
+            with upload_tab:
+                uploaded = st.file_uploader("Upload .txt file", type=["txt"], key="add_upload")
                 if uploaded is not None:
                     raw = uploaded.read().decode("utf-8")
-                    text, src = extractor.from_text(raw)
-                    video.transcript_text = text
-                    video.transcript_source = src
+                    video.transcript_text = raw.strip()
+                    video.transcript_source = "upload"
                     st.success("✅ Transcript loaded from file.")
 
-        # ─ Step 3: AI summary + notes
+        # Step 3: AI summary + notes
         if video.transcript_text:
             with st.spinner("✨ Generating summary and notes..."):
                 try:
@@ -305,13 +355,13 @@ elif page == "➕ Add Video":
                 except Exception as e:
                     st.warning(f"⚠️ AI summary skipped (check API key): {e}")
 
-        # ─ Step 4: Save
+        # Step 4: Save
         storage.save_video(video)
         st.balloons()
         st.success("✅ Video saved to your library! Go to 📚 Library to view it.")
 
 
-# ─── Library ───────────────────────────────────────────────────────────────
+# ─── Library ──────────────────────────────────────────────────────────────────────────
 elif page == "📚 Library":
     st.title("📚 Your Library")
 
@@ -344,7 +394,7 @@ elif page == "📚 Library":
                 _render_video_card(video, storage)
 
 
-# ─── Search ────────────────────────────────────────────────────────────────
+# ─── Search ──────────────────────────────────────────────────────────────────────────
 elif page == "🔍 Search":
     st.title("🔍 Search Library")
     query = st.text_input(
@@ -363,14 +413,14 @@ elif page == "🔍 Search":
             st.info("🔍 No results found. Try a different keyword.")
 
 
-# ─── Settings ──────────────────────────────────────────────────────────────
+# ─── Settings ────────────────────────────────────────────────────────────────────────
 elif page == "⚙️ Settings":
     st.title("⚙️ Settings")
     st.info("🔑 API keys are loaded from `.env` file. They are gitignored and never uploaded.")
 
-    yt_key = os.getenv("YOUTUBE_API_KEY", "")
-    groq_key = os.getenv("GROQ_API_KEY", "")
-    openai_key = os.getenv("OPENAI_API_KEY", "")
+    yt_key      = os.getenv("YOUTUBE_API_KEY", "")
+    groq_key    = os.getenv("GROQ_API_KEY", "")
+    openai_key  = os.getenv("OPENAI_API_KEY", "")
     ai_provider = os.getenv("AI_PROVIDER", "groq")
 
     st.subheader("📊 Current Configuration")
@@ -393,11 +443,28 @@ elif page == "⚙️ Settings":
 
     st.divider()
     st.subheader("⚠️ Danger Zone")
-    st.warning("This will permanently delete all saved videos from your local library.")
-    if st.button("🗑️ Clear All Data", type="secondary"):
-        confirm = st.checkbox("Yes, I understand this cannot be undone")
-        if confirm:
-            for v in storage.get_all_videos():
-                storage.delete_video(v.video_id)
-            st.success("🗑️ Library cleared.")
+    st.warning("🗑️ This will permanently delete all saved videos from your local library.")
+
+    # Use session_state for the confirm flow — checkboxes reset on every rerun
+    # so we persist the "armed" state across the two clicks.
+    if "clear_armed" not in st.session_state:
+        st.session_state["clear_armed"] = False
+
+    if not st.session_state["clear_armed"]:
+        if st.button("🗑️ Clear All Data", type="secondary"):
+            st.session_state["clear_armed"] = True
             st.rerun()
+    else:
+        st.error("⚠️ Are you sure? This cannot be undone.")
+        col_yes, col_no = st.columns(2)
+        with col_yes:
+            if st.button("✅ Yes, delete everything", type="primary"):
+                for v in storage.get_all_videos():
+                    storage.delete_video(v.video_id)
+                st.session_state["clear_armed"] = False
+                st.success("🗑️ Library cleared.")
+                st.rerun()
+        with col_no:
+            if st.button("❌ Cancel"):
+                st.session_state["clear_armed"] = False
+                st.rerun()
