@@ -57,6 +57,97 @@ DOWNLOAD_MODES = {
 # ║  HELPERS
 # ╚══════════════════════════════════════════════════════
 
+def _fmt_seconds(sec: int) -> str:
+    """Format seconds as H:MM:SS or M:SS."""
+    sec = max(0, int(sec))
+    h, rem = divmod(sec, 3600)
+    m, s   = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
+
+
+def _render_progress_bar(video: Video, compact: bool = False) -> None:
+    """Render a coloured progress bar + label.
+
+    compact=True  → small single-line version for library cards
+    compact=False → full version for detail page
+    """
+    pct = video.progress_pct
+    if video.duration_sec == 0:
+        return  # duration unknown, nothing to show
+
+    watched_fmt = _fmt_seconds(video.watch_progress_sec)
+    total_fmt   = _fmt_seconds(video.duration_sec)
+
+    if compact:
+        if pct > 0:
+            st.progress(pct / 100, text=f"⏱ {watched_fmt} / {total_fmt} ({pct:.0f}%)")
+    else:
+        if pct >= 100:
+            st.success(f"✅ Watched fully — {total_fmt}")
+        elif pct > 0:
+            st.progress(pct / 100, text=f"⏱ {watched_fmt} / {total_fmt}    {pct:.1f}% watched")
+        else:
+            st.progress(0.0, text=f"⏱ Not started — {total_fmt} total")
+
+
+def _render_progress_controls(video: Video) -> None:
+    """Slider + quick-set buttons for watch progress."""
+    vid = video.video_id
+
+    if video.duration_sec == 0:
+        st.info("ℹ️ Duration unknown — cannot track progress for this video.")
+        return
+
+    st.markdown("### ⏱ Watch Progress")
+    _render_progress_bar(video, compact=False)
+    st.caption("Drag the slider to update your progress, then click **Save**.")
+
+    new_sec = st.slider(
+        "Progress (seconds)",
+        min_value=0,
+        max_value=video.duration_sec,
+        value=video.watch_progress_sec,
+        step=max(1, video.duration_sec // 200),   # ~0.5% steps
+        format="%d s",
+        key=f"progress_slider_{vid}",
+        label_visibility="collapsed",
+    )
+
+    # Quick-set buttons
+    q_cols = st.columns(4)
+    quick_values = [
+        ("0%",   0),
+        ("25%",  video.duration_sec // 4),
+        ("50%",  video.duration_sec // 2),
+        ("100%", video.duration_sec),
+    ]
+    for col, (label, val) in zip(q_cols, quick_values):
+        with col:
+            if st.button(label, key=f"qset_{vid}_{label}", use_container_width=True):
+                video.watch_progress_sec = val
+                # Auto-set status on 100%
+                if val == video.duration_sec and video.status != WatchStatus.COMPLETED:
+                    video.status = WatchStatus.COMPLETED
+                elif val == 0 and video.status == WatchStatus.COMPLETED:
+                    video.status = WatchStatus.WATCHING
+                storage.update_video(video)
+                st.rerun()
+
+    # Save button
+    if st.button("💾 Save Progress", key=f"save_prog_{vid}", type="primary"):
+        video.watch_progress_sec = new_sec
+        # Auto-status: mark completed when slider reaches the end
+        if new_sec >= video.duration_sec and video.status != WatchStatus.COMPLETED:
+            video.status = WatchStatus.COMPLETED
+            st.success("🎉 Marked as Completed!")
+        elif new_sec > 0 and video.status == WatchStatus.SAVED:
+            video.status = WatchStatus.WATCHING
+        storage.update_video(video)
+        st.rerun()
+
+
 def _finish_add_video(video: Video) -> None:
     with st.spinner("✨ Generating summary and notes..."):
         try:
@@ -85,7 +176,6 @@ def _render_download_tab(video: Video) -> None:
         st.code("py -3.11 -m pip install yt-dlp")
         return
 
-    # ── FFmpeg status banner
     if has_ff:
         st.success(f"✅ FFmpeg detected — `{ff_ver.split('Copyright')[0].strip()}`  — all formats available.")
     else:
@@ -101,7 +191,6 @@ def _render_download_tab(video: Video) -> None:
     st.markdown("### ⬇️ Download")
     st.caption(f"Saved to: `{root / 'downloads'}`")
 
-    # ── Format selector with per-option notes
     mode_labels = list(DOWNLOAD_MODES.keys())
     if not has_ff:
         mode_labels_display = [
@@ -118,10 +207,8 @@ def _render_download_tab(video: Video) -> None:
         options=mode_labels_display,
         key=f"dl_mode_{vid}",
     )
-    # Map display label back to mode key
     mode = list(DOWNLOAD_MODES.values())[mode_labels_display.index(selected_display)]
 
-    # ── Show existing download
     if video.local_path and Path(video.local_path).exists():
         st.success(f"✅ Already downloaded: `{Path(video.local_path).name}`")
         with open(video.local_path, "rb") as f:
@@ -139,7 +226,6 @@ def _render_download_tab(video: Video) -> None:
         st.divider()
         st.caption("Re-download in a different format ↓")
 
-    # ── Download button
     dl_key = f"dl_running_{vid}"
     if dl_key not in st.session_state:
         st.session_state[dl_key] = False
@@ -202,9 +288,11 @@ def _render_detail_page(video: Video) -> None:
             video.status = WatchStatus(new_status)
             storage.update_video(video)
             st.rerun()
+        # Progress bar inline in header
+        _render_progress_bar(video, compact=False)
 
     st.divider()
-    tabs = st.tabs(["📝 Summary", "🗒️ Notes", "📄 Transcript", "❓ Ask", "⬇️ Download"])
+    tabs = st.tabs(["📝 Summary", "🗒️ Notes", "📄 Transcript", "❓ Ask", "⏱ Progress", "⬇️ Download"])
 
     with tabs[0]:
         if video.summary_bullets:
@@ -316,6 +404,9 @@ def _render_detail_page(video: Video) -> None:
                     st.rerun()
 
     with tabs[4]:
+        _render_progress_controls(video)
+
+    with tabs[5]:
         _render_download_tab(video)
 
 
@@ -326,6 +417,8 @@ def _render_video_card(video: Video) -> None:
         title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
         st.markdown(f"**{title_display}**")
         st.caption(f"{video.channel} · {video.duration}")
+        # Mini progress bar on card
+        _render_progress_bar(video, compact=True)
         status_options = [s.value for s in WatchStatus]
         new_status = st.selectbox(
             "Status",
@@ -388,6 +481,28 @@ if page == "📊 Dashboard":
             [("saved","🔵"),("watching","🟡"),("completed","🟢"),("dropped","🔴"),("rewatch","🟣")],
         ):
             col.metric(f"{emoji} {status.capitalize()}", counts.get(status, 0))
+
+        # ── Overall watch-time progress summary
+        all_vids = storage.get_all_videos()
+        vids_with_duration = [v for v in all_vids if v.duration_sec > 0]
+        if vids_with_duration:
+            total_sec    = sum(v.duration_sec          for v in vids_with_duration)
+            watched_sec  = sum(v.watch_progress_sec    for v in vids_with_duration)
+            overall_pct  = watched_sec / total_sec * 100 if total_sec else 0
+            st.divider()
+            prog_cols = st.columns([3, 1, 1])
+            with prog_cols[0]:
+                st.progress(
+                    min(1.0, watched_sec / total_sec),
+                    text=f"📊 Overall progress — {overall_pct:.1f}% of library watched",
+                )
+            with prog_cols[1]:
+                h, rem = divmod(watched_sec, 3600)
+                st.metric("⏱ Watched", f"{h}h {rem//60}m")
+            with prog_cols[2]:
+                h2, rem2 = divmod(total_sec, 3600)
+                st.metric("📽️ Total", f"{h2}h {rem2//60}m")
+
         st.divider()
         st.subheader("🕒 Recent Videos")
         recent = sorted(videos, key=lambda v: v.updated_at, reverse=True)[:6]
@@ -472,17 +587,20 @@ elif page == "📚 Library":
             "Filter", ["All", "saved", "watching", "completed", "dropped", "rewatch"]
         )
     with col_s:
-        sort_by = st.selectbox("Sort", ["Recently updated", "Title A–Z"])
+        sort_by = st.selectbox("Sort", ["Recently updated", "Title A–Z", "Progress ↑", "Progress ↓"])
     videos = (
         storage.get_all_videos()
         if status_filter == "All"
         else storage.filter_by_status(WatchStatus(status_filter))
     )
-    videos = (
-        sorted(videos, key=lambda v: v.title.lower())
-        if sort_by == "Title A–Z"
-        else sorted(videos, key=lambda v: v.updated_at, reverse=True)
-    )
+    if sort_by == "Title A–Z":
+        videos = sorted(videos, key=lambda v: v.title.lower())
+    elif sort_by == "Progress ↑":
+        videos = sorted(videos, key=lambda v: v.progress_pct)
+    elif sort_by == "Progress ↓":
+        videos = sorted(videos, key=lambda v: v.progress_pct, reverse=True)
+    else:
+        videos = sorted(videos, key=lambda v: v.updated_at, reverse=True)
     if not videos:
         st.info("📦 No videos for this filter.")
     else:
@@ -563,7 +681,6 @@ elif page == "⚙️ Settings":
             "Install: `winget install --id Gyan.FFmpeg -e` then restart the app."
         )
 
-    # ── yt-dlp Update Section
     st.divider()
     st.subheader("🔄 Update yt-dlp")
     st.caption(
@@ -595,7 +712,6 @@ elif page == "⚙️ Settings":
 
     if st.session_state["ytdlp_update_log"]:
         if st.session_state["ytdlp_update_done"]:
-            # Show a short success summary first
             last_line = [
                 l for l in st.session_state["ytdlp_update_log"].splitlines() if l.strip()
             ][-1]
