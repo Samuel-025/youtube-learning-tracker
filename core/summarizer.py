@@ -1,4 +1,4 @@
-"""AI-powered and fallback summarizer — bullets + paragraph."""
+"""AI-powered and fallback summarizer — bullets + paragraph + Q&A."""
 
 import os
 from typing import Optional
@@ -9,10 +9,7 @@ class Summarizer:
         self.provider = provider or os.getenv("AI_PROVIDER", "none").lower()
 
     def summarize(self, transcript: str, title: str = "") -> tuple[list, str]:
-        """
-        Returns (bullet_points: list[str], paragraph: str)
-        Tries AI first, falls back to basic extraction.
-        """
+        """Returns (bullet_points: list[str], paragraph: str)."""
         if not transcript.strip():
             return [], "No transcript available to summarize."
 
@@ -25,6 +22,51 @@ class Summarizer:
         else:
             return self._summarize_basic(transcript)
 
+    def answer_question(self, transcript: str, question: str, title: str = "") -> str:
+        """Answer a question based on transcript context."""
+        if not transcript.strip():
+            return "No transcript available to answer questions."
+
+        prompt = self._build_qa_prompt(transcript, question, title)
+
+        try:
+            if self.provider == "groq":
+                from groq import Groq
+                client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+                r = client.chat.completions.create(
+                    model="llama3-8b-8192",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=512,
+                )
+                return r.choices[0].message.content or "No answer returned."
+            elif self.provider == "openai":
+                from openai import OpenAI
+                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                r = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=512,
+                )
+                return r.choices[0].message.content or "No answer returned."
+            elif self.provider == "anthropic":
+                import anthropic
+                client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                msg = client.messages.create(
+                    model="claude-3-haiku-20240307",
+                    max_tokens=512,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                # Only TextBlock has .text — filter explicitly
+                for block in msg.content:
+                    if hasattr(block, "text"):
+                        return str(block.text)
+                return "No answer returned."
+        except Exception as e:
+            return f"Could not answer: {e}"
+
+        # Fallback: basic keyword search in transcript
+        return self._basic_qa(transcript, question)
+
     def _summarize_anthropic(self, transcript: str, title: str) -> tuple[list, str]:
         try:
             import anthropic
@@ -33,10 +75,16 @@ class Summarizer:
             message = client.messages.create(
                 model="claude-3-haiku-20240307",
                 max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": prompt}],
             )
-            return self._parse_response(message.content[0].text)
-        except Exception as e:
+            # Filter to TextBlock only — ThinkingBlock/ToolUseBlock etc. have no .text
+            text = ""
+            for block in message.content:
+                if hasattr(block, "text"):
+                    text = str(block.text)
+                    break
+            return self._parse_response(text) if text else self._summarize_basic(transcript)
+        except Exception:
             return self._summarize_basic(transcript)
 
     def _summarize_openai(self, transcript: str, title: str) -> tuple[list, str]:
@@ -49,7 +97,8 @@ class Summarizer:
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1024,
             )
-            return self._parse_response(response.choices[0].message.content)
+            content = response.choices[0].message.content
+            return self._parse_response(content) if content else self._summarize_basic(transcript)
         except Exception:
             return self._summarize_basic(transcript)
 
@@ -63,12 +112,12 @@ class Summarizer:
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1024,
             )
-            return self._parse_response(response.choices[0].message.content)
+            content = response.choices[0].message.content
+            return self._parse_response(content) if content else self._summarize_basic(transcript)
         except Exception:
             return self._summarize_basic(transcript)
 
     def _build_prompt(self, transcript: str, title: str) -> str:
-        # Trim transcript to avoid token limits
         max_chars = 6000
         trimmed = transcript[:max_chars] + ("..." if len(transcript) > max_chars else "")
         return f"""You are a helpful learning assistant. Given the transcript below, provide:
@@ -89,21 +138,43 @@ BULLETS:
 PARAGRAPH:
 Your paragraph summary here."""
 
+    def _build_qa_prompt(self, transcript: str, question: str, title: str) -> str:
+        max_chars = 5000
+        trimmed = transcript[:max_chars]
+        return f"""You are a helpful learning assistant. Answer the question based ONLY on the transcript below.
+If the answer is not in the transcript, say so clearly.
+
+Video: {title}
+Transcript: {trimmed}
+
+Question: {question}
+Answer:"""
+
     def _parse_response(self, text: str) -> tuple[list, str]:
-        bullets = []
+        bullets: list[str] = []
         paragraph = ""
         lines = text.strip().split("\n")
         mode = None
         for line in lines:
-            if line.strip().startswith("BULLETS:"):
+            stripped = line.strip()
+            if stripped.startswith("BULLETS:"):
                 mode = "bullets"
-            elif line.strip().startswith("PARAGRAPH:"):
+            elif stripped.startswith("PARAGRAPH:"):
                 mode = "paragraph"
-            elif mode == "bullets" and line.strip().startswith("-"):
-                bullets.append(line.strip()[1:].strip())
-            elif mode == "paragraph" and line.strip():
-                paragraph += " " + line.strip()
+            elif mode == "bullets" and stripped.startswith("-"):
+                bullets.append(stripped[1:].strip())
+            elif mode == "paragraph" and stripped:
+                paragraph += " " + stripped
         return bullets, paragraph.strip()
+
+    def _basic_qa(self, transcript: str, question: str) -> str:
+        """Very basic fallback: return transcript sentences containing question keywords."""
+        keywords = [w.lower() for w in question.split() if len(w) > 3]
+        sentences = [s.strip() for s in transcript.split(".") if s.strip()]
+        matches = [s for s in sentences if any(k in s.lower() for k in keywords)]
+        if matches:
+            return ". ".join(matches[:3]) + "."
+        return "Could not find a relevant answer in the transcript. Try adding an AI provider key in .env."
 
     def _summarize_basic(self, transcript: str) -> tuple[list, str]:
         """Fallback: extract first few sentences as a basic summary."""

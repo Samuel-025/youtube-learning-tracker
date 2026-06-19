@@ -1,4 +1,4 @@
-"""Auto and manual notes management."""
+"""Auto and manual notes generation."""
 
 import os
 from typing import Optional
@@ -31,15 +31,22 @@ Format as bullet points starting with '- '.
 
 Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
         try:
+            raw_text: str = ""
+
             if self.provider == "anthropic":
                 import anthropic
                 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
                 msg = client.messages.create(
                     model="claude-3-haiku-20240307",
                     max_tokens=1024,
-                    messages=[{"role": "user", "content": prompt}]
+                    messages=[{"role": "user", "content": prompt}],
                 )
-                text = msg.content[0].text
+                # Filter to TextBlock only — ThinkingBlock/ToolUseBlock etc. have no .text
+                for block in msg.content:
+                    if hasattr(block, "text"):
+                        raw_text = str(block.text)
+                        break
+
             elif self.provider == "openai":
                 from openai import OpenAI
                 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -48,7 +55,8 @@ Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=1024,
                 )
-                text = r.choices[0].message.content
+                raw_text = r.choices[0].message.content or ""
+
             elif self.provider == "groq":
                 from groq import Groq
                 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -57,11 +65,16 @@ Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=1024,
                 )
-                text = r.choices[0].message.content
-            else:
+                raw_text = r.choices[0].message.content or ""
+
+            if not raw_text:
                 return []
 
-            return [line.strip()[1:].strip() for line in text.split("\n") if line.strip().startswith("-")]
+            return [
+                line.strip()[1:].strip()
+                for line in raw_text.split("\n")
+                if line.strip().startswith("-")
+            ]
         except Exception:
             return []
 

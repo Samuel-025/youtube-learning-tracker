@@ -2,18 +2,33 @@
 
 import os
 from typing import Optional
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled, NoTranscriptFound
+    _YT_AVAILABLE = True
+except ImportError:
+    _YT_AVAILABLE = False
+    TranscriptsDisabled = Exception  # type: ignore
+    NoTranscriptFound = Exception    # type: ignore
 
 
 class TranscriptExtractor:
-    def __init__(self, preferred_languages: list = None):
-        self.preferred_languages = preferred_languages or ["en", "en-US", "en-GB", "hi"]
+    # Explicit list — never None, so Pylance is satisfied
+    DEFAULT_LANGUAGES: list[str] = ["en", "en-US", "en-GB", "hi"]
+
+    def __init__(self, preferred_languages: Optional[list[str]] = None):
+        self.preferred_languages: list[str] = (
+            preferred_languages if preferred_languages is not None else self.DEFAULT_LANGUAGES
+        )
 
     def extract(self, video_id: str) -> tuple[str, str]:
         """
         Try to auto-extract transcript.
         Returns (transcript_text, source) where source is 'auto' or 'unavailable'.
         """
+        if not _YT_AVAILABLE:
+            return "", "unavailable (youtube-transcript-api not installed)"
+
         try:
             transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
 
@@ -21,8 +36,11 @@ class TranscriptExtractor:
             try:
                 transcript = transcript_list.find_transcript(self.preferred_languages)
             except Exception:
-                # Fallback: use any available transcript, auto-translate to English
-                transcript = list(transcript_list)[0]
+                # Fallback: use first available, try to translate to English
+                available = list(transcript_list)
+                if not available:
+                    return "", "unavailable"
+                transcript = available[0]
                 if transcript.language_code not in self.preferred_languages:
                     try:
                         transcript = transcript.translate("en")
@@ -30,8 +48,16 @@ class TranscriptExtractor:
                         pass
 
             entries = transcript.fetch()
-            text = " ".join([e["text"] for e in entries])
-            text = text.replace("\n", " ").strip()
+            # youtube-transcript-api >= 1.0 returns FetchedTranscript (iterable of dicts)
+            text_parts: list[str] = []
+            for entry in entries:
+                if isinstance(entry, dict):
+                    text_parts.append(entry.get("text", ""))
+                else:
+                    # FetchedTranscriptSnippet object
+                    text_parts.append(str(getattr(entry, "text", "")))
+
+            text = " ".join(text_parts).replace("\n", " ").strip()
             return text, "auto"
 
         except (TranscriptsDisabled, NoTranscriptFound):
@@ -46,5 +72,5 @@ class TranscriptExtractor:
     def from_file(self, filepath: str) -> tuple[str, str]:
         """Accept transcript from uploaded .txt file."""
         with open(filepath, "r", encoding="utf-8") as f:
-            text = f.read().strip()
-        return text, "upload"
+            content = f.read().strip()
+        return content, "upload"
