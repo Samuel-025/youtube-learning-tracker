@@ -76,8 +76,13 @@ def _render_progress_bar(video: Video, compact: bool = False) -> None:
     watched_fmt = _fmt_seconds(video.watch_progress_sec)
     total_fmt   = _fmt_seconds(video.duration_sec)
     if compact:
-        if pct > 0:
+        # Always show bar — 0% shows "Not started" so Saved videos aren't invisible
+        if pct >= 100:
+            st.progress(1.0, text=f"⏱ {total_fmt} / {total_fmt} (100%)")
+        elif pct > 0:
             st.progress(pct / 100, text=f"⏱ {watched_fmt} / {total_fmt} ({pct:.0f}%)")
+        else:
+            st.progress(0.0, text=f"⏱ 0:00 / {total_fmt} (0%)")
     else:
         if pct >= 100:
             st.success(f"✅ Watched fully — {total_fmt}")
@@ -270,9 +275,6 @@ def _render_detail_page(video: Video) -> None:
 
     # ── KEY FIX: If session_state holds a stale selectbox value that differs
     #    from what storage says, delete it so Streamlit uses the fresh index.
-    #    This happens after _apply_progress auto-transitions the status
-    #    (e.g. watching → completed) but the cached widget key still holds
-    #    the old value and silently overwrites the save on the next rerun.
     detail_key = f"detail_status_{vid}"
     if detail_key in st.session_state and st.session_state[detail_key] != video.status.value:
         del st.session_state[detail_key]
@@ -595,6 +597,7 @@ elif page == "➕ Add Video":
 
 # ── Library
 elif page == "📚 Library":
+    # ── Route to detail FIRST — before rendering any cards (fixes lag/stuck)
     if "detail_video_id" in st.session_state:
         v = storage.get_video(st.session_state["detail_video_id"])
         if v:
@@ -630,6 +633,7 @@ elif page == "📚 Library":
 
 # ── Collections
 elif page == "📁 Collections":
+    # ── Route to detail FIRST — before rendering collection UI (fixes lag/stuck)
     if "detail_video_id" in st.session_state:
         v = storage.get_video(st.session_state["detail_video_id"])
         if v:
@@ -781,6 +785,7 @@ elif page == "📁 Collections":
 
 # ── Search
 elif page == "🔍 Search":
+    # ── Route to detail FIRST — before rendering search results (fixes lag/stuck)
     if "detail_video_id" in st.session_state:
         v = storage.get_video(st.session_state["detail_video_id"])
         if v:
