@@ -156,6 +156,9 @@ def _render_progress_controls(video: Video) -> None:
             if st.button(label, key=f"qset_{vid}_{label}", use_container_width=True):
                 celebration = _apply_progress(video, val)
                 storage.update_video(video)
+                # Clear stale selectbox so it re-renders with the new status
+                st.session_state.pop(f"detail_status_{vid}", None)
+                st.session_state.pop(f"status_{vid}", None)
                 if celebration:
                     st.balloons()
                     st.success(celebration)
@@ -164,6 +167,9 @@ def _render_progress_controls(video: Video) -> None:
     if st.button("💾 Save Progress", key=f"save_prog_{vid}", type="primary"):
         celebration = _apply_progress(video, new_sec)
         storage.update_video(video)
+        # Clear stale selectbox so it re-renders with the new status
+        st.session_state.pop(f"detail_status_{vid}", None)
+        st.session_state.pop(f"status_{vid}", None)
         if celebration:
             st.balloons()
             st.success(celebration)
@@ -257,13 +263,19 @@ def _render_download_tab(video: Video) -> None:
 def _render_detail_page(video: Video) -> None:
     vid = video.video_id
 
-    # ── Always re-fetch from storage so the status selectbox index reflects
-    #    any status change made by _apply_progress on the previous rerun.
-    #    Without this, Streamlit restores the selectbox to its cached (stale)
-    #    value and immediately overwrites the newly-saved status.
+    # ── Always re-fetch from storage so we have the latest status/progress.
     fresh = storage.get_video(vid)
     if fresh is not None:
         video = fresh
+
+    # ── KEY FIX: If session_state holds a stale selectbox value that differs
+    #    from what storage says, delete it so Streamlit uses the fresh index.
+    #    This happens after _apply_progress auto-transitions the status
+    #    (e.g. watching → completed) but the cached widget key still holds
+    #    the old value and silently overwrites the save on the next rerun.
+    detail_key = f"detail_status_{vid}"
+    if detail_key in st.session_state and st.session_state[detail_key] != video.status.value:
+        del st.session_state[detail_key]
 
     if st.button("← Back", key="back_btn"):
         st.session_state.pop("detail_video_id", None)
@@ -280,7 +292,7 @@ def _render_detail_page(video: Video) -> None:
         new_status = st.selectbox(
             "Status", options=status_options,
             index=status_options.index(video.status.value),
-            key=f"detail_status_{vid}",
+            key=detail_key,
             format_func=lambda s: f"{STATUS_COLORS.get(s, '⚪')} {s.capitalize()}",
         )
         if new_status != video.status.value:
