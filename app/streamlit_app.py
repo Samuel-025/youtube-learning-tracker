@@ -3,6 +3,7 @@
 import streamlit as st  # type: ignore[import-untyped]
 import os
 import sys
+import subprocess
 from pathlib import Path
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 
@@ -531,8 +532,10 @@ elif page == "⚙️ Settings":
 
     try:
         import yt_dlp as _ytdlp
-        ytdlp_status = f"✅ {_ytdlp.version.__version__}"
+        ytdlp_ver    = _ytdlp.version.__version__
+        ytdlp_status = f"✅ {ytdlp_ver}"
     except ImportError:
+        ytdlp_ver    = None
         ytdlp_status = "❌ Not installed"
 
     try:
@@ -559,6 +562,53 @@ elif page == "⚙️ Settings":
             "⚠️ FFmpeg not detected. Download feature works in limited mode.\n"
             "Install: `winget install --id Gyan.FFmpeg -e` then restart the app."
         )
+
+    # ── yt-dlp Update Section
+    st.divider()
+    st.subheader("🔄 Update yt-dlp")
+    st.caption(
+        "YouTube frequently changes its download protection. "
+        "Keeping yt-dlp up-to-date fixes signature errors, missing formats, and muted downloads."
+    )
+
+    if "ytdlp_update_log" not in st.session_state:
+        st.session_state["ytdlp_update_log"] = ""
+    if "ytdlp_update_done" not in st.session_state:
+        st.session_state["ytdlp_update_done"] = False
+
+    col_btn, col_ver = st.columns([1, 2])
+    with col_btn:
+        if st.button("⬆️ Update yt-dlp now", type="primary", key="ytdlp_update_btn"):
+            with st.spinner("Running `pip install -U yt-dlp` ..."):
+                result = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
+                    capture_output=True,
+                    text=True,
+                )
+            log = (result.stdout + result.stderr).strip()
+            st.session_state["ytdlp_update_log"]  = log
+            st.session_state["ytdlp_update_done"] = result.returncode == 0
+            st.rerun()
+    with col_ver:
+        if ytdlp_ver:
+            st.info(f"Current version: **{ytdlp_ver}**  \nTo apply the update, restart Streamlit after upgrading.")
+
+    if st.session_state["ytdlp_update_log"]:
+        if st.session_state["ytdlp_update_done"]:
+            # Show a short success summary first
+            last_line = [
+                l for l in st.session_state["ytdlp_update_log"].splitlines() if l.strip()
+            ][-1]
+            st.success(f"✅ Update complete — {last_line}")
+            st.caption("♻️ Restart Streamlit (`Ctrl+C` then `run.ps1`) to load the new version.")
+        else:
+            st.error("❌ Update failed.")
+        with st.expander("📋 Full pip output", expanded=not st.session_state["ytdlp_update_done"]):
+            st.code(st.session_state["ytdlp_update_log"], language="text")
+        if st.button("🗑️ Clear output", key="ytdlp_clear_log"):
+            st.session_state["ytdlp_update_log"]  = ""
+            st.session_state["ytdlp_update_done"] = False
+            st.rerun()
 
     st.divider()
     st.subheader("🔗 Get Free API Keys")
