@@ -3,8 +3,10 @@ streamlit>=1.35.0
 
 # YouTube API
 google-api-python-client>=2.100.0
-# v1.x required — transcript_extractor uses YouTubeTranscriptApi().list()
-youtube-transcript-api>=1.0.0
+
+# Transcript extraction
+yt-dlp>=2024.1.0                  # primary: downloads subs directly, no API key needed
+youtube-transcript-api>=1.0.0    # fallback
 
 # AI Summarization — all optional, install what you use
 # Groq is free and recommended (no credit card required)
