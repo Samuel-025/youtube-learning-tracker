@@ -76,7 +76,7 @@ def _render_detail_page(video: Video) -> None:
     col1, col2 = st.columns([1, 2])
     with col1:
         if video.thumbnail_url:
-            st.image(video.thumbnail_url, use_container_width=True)
+            st.image(video.thumbnail_url, width="stretch")
     with col2:
         st.title(video.title)
         st.caption(
@@ -219,7 +219,7 @@ def _render_video_card(video: Video) -> None:
     """Compact library card."""
     with st.container(border=True):
         if video.thumbnail_url:
-            st.image(video.thumbnail_url, use_container_width=True)
+            st.image(video.thumbnail_url, width="stretch")
         title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
         st.markdown(f"**{title_display}**")
         st.caption(f"{video.channel} · {video.duration}")
@@ -238,7 +238,7 @@ def _render_video_card(video: Video) -> None:
             storage.update_video(video)
             st.rerun()
 
-        if st.button("📌 View Details", key=f"view_{video.video_id}", use_container_width=True):
+        if st.button("📌 View Details", key=f"view_{video.video_id}", width="stretch"):
             st.session_state["detail_video_id"] = video.video_id
             st.rerun()
 
@@ -322,7 +322,7 @@ elif page == "➕ Add Video":
         col1, col2 = st.columns([1, 2])
         with col1:
             if video.thumbnail_url:
-                st.image(video.thumbnail_url, use_container_width=True)
+                st.image(video.thumbnail_url, width="stretch")
         with col2:
             st.markdown(f"**Channel:** {video.channel}")
             st.markdown(f"**Duration:** {video.duration}")
