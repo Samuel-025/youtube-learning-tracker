@@ -8,7 +8,7 @@ import uuid
 @dataclass
 class Collection:
     name:        str
-    id:          str        = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    id:          str        = field(default_factory=lambda: str(uuid.uuid4()))  # fix #3: full UUID, no truncation
     description: str        = ""
     emoji:       str        = "📁"
     video_ids:   list       = field(default_factory=list)   # ordered list of video_id strings

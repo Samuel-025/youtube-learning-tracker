@@ -68,7 +68,8 @@ class Downloader:
         opts["outtmpl"] = str(self.download_dir / "%(title)s [%(id)s].%(ext)s")
 
         log_lines: list[str] = []
-        downloaded_files: list[str] = []
+        # fix #2: track the *final* output path reported by yt-dlp after merging/post-processing
+        final_filepath: list[str] = []
 
         class _Logger:
             def debug(self, msg: str) -> None: pass
@@ -76,23 +77,36 @@ class Downloader:
             def error(self, msg: str) -> None: log_lines.append(f"ERR:  {msg}")
 
         def _hook(d: dict[str, Any]) -> None:
+            # fix #2: prefer 'info_dict' final filename over raw 'filename'
+            # After merging, yt-dlp sets status='finished' on the merged file.
             if d.get("status") == "finished":
-                fname = d.get("filename", "")
+                # info_dict holds the merged output path after post-processing
+                info = d.get("info_dict") or {}
+                fname = (
+                    info.get("filepath")
+                    or info.get("_filename")
+                    or d.get("filename", "")
+                )
                 if fname:
-                    downloaded_files.append(fname)
+                    final_filepath.append(fname)
 
         opts["logger"]         = _Logger()
         opts["progress_hooks"] = [_hook]
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:  # type: ignore[arg-type]
-                ydl.extract_info(url, download=True)
+                info = ydl.extract_info(url, download=True)
+                # fix #2: also grab the final path from extract_info return value
+                if info:
+                    fp = info.get("filepath") or info.get("_filename", "")
+                    if fp:
+                        final_filepath.append(fp)
         except Exception as exc:
             detail = "\n".join(log_lines[-10:]) if log_lines else ""
             raise RuntimeError(f"yt-dlp download failed: {exc}\n\nLog:\n{detail}") from exc
 
         self.last_warnings = [l for l in log_lines if "warn" in l.lower()]
-        return self._resolve_output(video_id, mode, ff_path is not None, downloaded_files)
+        return self._resolve_output(video_id, mode, ff_path is not None, final_filepath)
 
     # ------------------------------------------------------------------ #
     #  Format selection — H.264 preferred everywhere                      #
@@ -121,8 +135,6 @@ class Downloader:
 
         elif mode == "video_720":
             if ff_path:
-                # vcodec^=avc1 → only H.264 streams (no AV1/VP9)
-                # Falls back through progressively looser constraints
                 base["format"] = (
                     "bestvideo[height<=720][vcodec^=avc1]+bestaudio[ext=m4a]"
                     "/bestvideo[height<=720][vcodec^=avc1]+bestaudio"
@@ -176,18 +188,26 @@ class Downloader:
         video_id: str,
         mode: DownloadMode,
         had_ff: bool,
-        downloaded_files: list[str],
+        final_filepath: list[str],
     ) -> Path:
-        for fname in reversed(downloaded_files):
+        # fix #2: walk candidates in reverse (latest hook event last) and
+        # accept only paths that actually exist on disk right now.
+        for fname in reversed(final_filepath):
             p = Path(fname)
+
+            # For audio+ffmpeg the hook fires on the pre-conversion file;
+            # the real output is the .mp3 sibling.
             if mode == "audio" and had_ff:
                 mp3 = p.with_suffix(".mp3")
                 if mp3.exists():
                     return mp3
+
+            # Accept the path only if it physically exists (not the deleted intermediate)
             if p.exists():
                 self._assert_has_audio(p, mode)
                 return p
 
+        # Fallback: scan downloads dir for newest file matching the video ID
         candidates = sorted(
             self.download_dir.glob(f"*{video_id}*"),
             key=lambda p: p.stat().st_mtime,

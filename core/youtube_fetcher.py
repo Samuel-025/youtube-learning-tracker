@@ -37,6 +37,8 @@ class YouTubeFetcher:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("YOUTUBE_API_KEY", "")
         self._service = None
+        # fix #11: in-process cache keyed by video_id to avoid redundant API calls
+        self._cache: dict[str, Video] = {}
 
     def _get_service(self):
         if not self._service:
@@ -48,14 +50,28 @@ class YouTubeFetcher:
             self._service = build("youtube", "v3", developerKey=self.api_key)
         return self._service
 
-    def fetch_video(self, url: str) -> Video:
+    def fetch_video(self, url: str, storage=None) -> Video:
         """
         Fetch video metadata from the YouTube Data API v3.
         Returns a Video object.  Raises ValueError / RuntimeError on failure.
+
+        fix #11: if `storage` is provided, returns the cached Video directly
+        when the video ID already exists — saves API quota.
         """
         video_id = extract_video_id(url)
         if not video_id:
             raise ValueError(f"Could not extract a video ID from: {url!r}")
+
+        # fix #11: check in-memory session cache first
+        if video_id in self._cache:
+            return self._cache[video_id]
+
+        # fix #11: check persistent storage before hitting the API
+        if storage is not None:
+            existing = storage.get_video(video_id)
+            if existing is not None:
+                self._cache[video_id] = existing
+                return existing
 
         try:
             service = self._get_service()
@@ -64,7 +80,14 @@ class YouTubeFetcher:
                 id=video_id,
             ).execute()
         except HttpError as exc:
-            raise RuntimeError(f"YouTube API error: {exc.reason}") from exc
+            # fix #5/#11: friendlier quota-exceeded message
+            reason = getattr(exc, "reason", str(exc))
+            if "quotaExceeded" in str(exc) or "forbidden" in reason.lower():
+                raise RuntimeError(
+                    "YouTube API quota exceeded (10,000 units/day). "
+                    "Wait until midnight Pacific Time or use a different API key."
+                ) from exc
+            raise RuntimeError(f"YouTube API error: {reason}") from exc
 
         items = response.get("items", [])
         if not items:
@@ -79,14 +102,25 @@ class YouTubeFetcher:
 
         # Duration
         duration_iso = content.get("duration", "PT0S")
-        duration_sec = int(isodate.parse_duration(duration_iso).total_seconds())
-        mins, secs   = divmod(duration_sec, 60)
-        hours, mins  = divmod(mins, 60)
-        duration_str = (
-            f"{hours}:{mins:02d}:{secs:02d}" if hours else f"{mins}:{secs:02d}"
-        )
+        try:
+            duration_sec = int(isodate.parse_duration(duration_iso).total_seconds())
+        except Exception:
+            duration_sec = 0
 
-        return Video(
+        # fix #5: live streams / premieres return PT0S or very small durations
+        # Build the human string; duration_sec=0 is fine — Video.__post_init__
+        # will set duration_sec=0 and progress tracking will show
+        # "Duration unknown" rather than a broken progress bar.
+        if duration_sec > 0:
+            mins, secs  = divmod(duration_sec, 60)
+            hours, mins = divmod(mins, 60)
+            duration_str = (
+                f"{hours}:{mins:02d}:{secs:02d}" if hours else f"{mins}:{secs:02d}"
+            )
+        else:
+            duration_str = "0:00"  # live / unknown
+
+        video = Video(
             video_id      = video_id,
             url           = f"https://www.youtube.com/watch?v={video_id}",
             title         = snippet.get("title", "Unknown Title"),
@@ -94,4 +128,7 @@ class YouTubeFetcher:
             thumbnail_url = _best_thumbnail(snippet.get("thumbnails", {})),
             published_at  = snippet.get("publishedAt", ""),
             duration      = duration_str,
+            duration_sec  = duration_sec,  # fix #5: pass explicitly so live streams show cleanly
         )
+        self._cache[video_id] = video
+        return video

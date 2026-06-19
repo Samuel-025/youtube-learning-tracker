@@ -77,7 +77,9 @@ class TranscriptExtractor:
         """Download subtitles via yt-dlp and parse into timestamped text."""
         url = f"https://www.youtube.com/watch?v={video_id}"
 
-        with tempfile.TemporaryDirectory() as tmpdir:
+        # fix #12: ignore_cleanup_errors avoids PermissionError on Windows when
+        # yt-dlp background threads haven’t released file handles yet.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
             for sub_type, _ydl_key in [("manual", "subtitles"), ("auto", "automatic_captions")]:
                 vtt_path = self._download_vtt(url, tmpdir, sub_type)
                 if vtt_path:
@@ -89,10 +91,15 @@ class TranscriptExtractor:
 
     def _download_vtt(self, url: str, outdir: str, sub_type: str) -> Optional[Path]:
         """Use yt-dlp to download the best available subtitle file to outdir."""
-        lang_codes = self.preferred_languages + ["en"]
+        # fix #6: deduplicate lang_codes so "en" is not listed twice when
+        # preferred_languages already contains it.
+        seen: set[str] = set()
+        lang_codes: list[str] = []
+        for lang in self.preferred_languages + ["en"]:
+            if lang not in seen:
+                seen.add(lang)
+                lang_codes.append(lang)
 
-        # dict[str, Any] is correct; # type: ignore silences Pylance's false-positive
-        # caused by yt_dlp having no type stubs (it invents an incompatible _Params type).
         ydl_opts: dict[str, Any] = {
             "skip_download": True,
             "quiet": True,
@@ -186,7 +193,11 @@ class TranscriptExtractor:
     # ------------------------------------------------------------------ #
 
     def _extract_yt_api(self, video_id: str) -> tuple[str, str]:
-        """Fallback: extract via youtube-transcript-api."""
+        """Fallback: extract via youtube-transcript-api.
+
+        fix #6: use full preferred_languages list (not a subset) so the
+        fallback covers the same languages as the yt-dlp path.
+        """
         try:
             ytt_api = YouTubeTranscriptApi()
             transcript_list = ytt_api.list(video_id)

@@ -5,10 +5,17 @@ Both files are gitignored — they are never committed to GitHub.
 """
 
 import json
+import logging
 import os
+import threading
 from typing import Optional
 from models.video import Video, WatchStatus
 from models.collection import Collection
+
+logger = logging.getLogger(__name__)
+
+# fix #1: one lock per process guards both JSON files
+_STORAGE_LOCK = threading.Lock()
 
 
 class Storage:
@@ -38,8 +45,11 @@ class Storage:
             return {}
 
     def _write(self, data: dict) -> None:
-        with open(self.path, "w", encoding="utf-8") as f:
+        """Atomic write: write to .tmp then os.replace() so no partial writes."""
+        tmp = self.path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, self.path)  # fix #1: atomic on all OSes
 
     # ------------------------------------------------------------------ #
     #  Internal I/O — Collections                                         #
@@ -53,48 +63,62 @@ class Storage:
             return {}
 
     def _write_collections(self, data: dict) -> None:
-        with open(self._coll_path, "w", encoding="utf-8") as f:
+        """Atomic write for collections file."""
+        tmp = self._coll_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, self._coll_path)  # fix #1: atomic
 
     # ------------------------------------------------------------------ #
     #  CRUD — Videos                                                       #
     # ------------------------------------------------------------------ #
 
     def save_video(self, video: Video) -> None:
-        data = self._read()
-        data[video.video_id] = video.to_dict()
-        self._write(data)
+        with _STORAGE_LOCK:  # fix #1: serialize concurrent Streamlit reruns
+            data = self._read()
+            data[video.video_id] = video.to_dict()
+            self._write(data)
 
     def get_video(self, video_id: str) -> Optional[Video]:
-        data = self._read()
+        with _STORAGE_LOCK:
+            data = self._read()
         if video_id not in data:
             return None
         try:
             return Video.from_dict(data[video_id])
-        except Exception:
+        except Exception as exc:
+            logger.warning("Skipped corrupt video record %s: %s", video_id, exc)  # fix #13
             return None
 
     def get_all_videos(self) -> list[Video]:
-        data = self._read()
+        with _STORAGE_LOCK:
+            data = self._read()
         videos: list[Video] = []
-        for v in data.values():
+        for vid_id, v in data.items():
             try:
                 videos.append(Video.from_dict(v))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Skipped corrupt video record %s: %s", vid_id, exc)  # fix #13
         return videos
 
     def delete_video(self, video_id: str) -> bool:
-        data = self._read()
-        if video_id not in data:
-            return False
-        del data[video_id]
-        self._write(data)
-        # Also remove from any collections
-        for coll in self.get_all_collections():
-            if video_id in coll.video_ids:
-                coll.video_ids.remove(video_id)
-                self.update_collection(coll)
+        with _STORAGE_LOCK:  # fix #8: hold lock for entire delete + collection update
+            data = self._read()
+            if video_id not in data:
+                return False
+            del data[video_id]
+            self._write(data)
+
+            # fix #8: batch collection updates — single read + single write
+            coll_data = self._read_collections()
+            changed   = False
+            for coll_dict in coll_data.values():
+                ids = coll_dict.get("video_ids", [])
+                if video_id in ids:
+                    ids.remove(video_id)
+                    changed = True
+            if changed:
+                self._write_collections(coll_data)
         return True
 
     def update_video(self, video: Video) -> None:
@@ -106,27 +130,31 @@ class Storage:
     # ------------------------------------------------------------------ #
 
     def save_collection(self, coll: Collection) -> None:
-        data = self._read_collections()
-        data[coll.id] = coll.to_dict()
-        self._write_collections(data)
+        with _STORAGE_LOCK:
+            data = self._read_collections()
+            data[coll.id] = coll.to_dict()
+            self._write_collections(data)
 
     def get_collection(self, coll_id: str) -> Optional[Collection]:
-        data = self._read_collections()
+        with _STORAGE_LOCK:
+            data = self._read_collections()
         if coll_id not in data:
             return None
         try:
             return Collection.from_dict(data[coll_id])
-        except Exception:
+        except Exception as exc:
+            logger.warning("Skipped corrupt collection record %s: %s", coll_id, exc)  # fix #13
             return None
 
     def get_all_collections(self) -> list[Collection]:
-        data = self._read_collections()
+        with _STORAGE_LOCK:
+            data = self._read_collections()
         colls: list[Collection] = []
-        for c in data.values():
+        for coll_id, c in data.items():
             try:
                 colls.append(Collection.from_dict(c))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Skipped corrupt collection record %s: %s", coll_id, exc)  # fix #13
         return sorted(colls, key=lambda c: c.created_at)
 
     def update_collection(self, coll: Collection) -> None:
@@ -134,28 +162,40 @@ class Storage:
         self.save_collection(coll)
 
     def delete_collection(self, coll_id: str) -> bool:
-        data = self._read_collections()
-        if coll_id not in data:
-            return False
-        del data[coll_id]
-        self._write_collections(data)
+        with _STORAGE_LOCK:
+            data = self._read_collections()
+            if coll_id not in data:
+                return False
+            del data[coll_id]
+            self._write_collections(data)
         return True
 
     def add_video_to_collection(self, coll_id: str, video_id: str) -> bool:
-        coll = self.get_collection(coll_id)
-        if not coll:
-            return False
-        if video_id not in coll.video_ids:
-            coll.video_ids.append(video_id)
-            self.update_collection(coll)
+        with _STORAGE_LOCK:
+            data = self._read_collections()
+            if coll_id not in data:
+                return False
+            ids = data[coll_id].setdefault("video_ids", [])
+            if video_id not in ids:
+                ids.append(video_id)
+                # update timestamp
+                from datetime import datetime
+                data[coll_id]["updated_at"] = datetime.now().isoformat()
+            self._write_collections(data)
         return True
 
     def remove_video_from_collection(self, coll_id: str, video_id: str) -> bool:
-        coll = self.get_collection(coll_id)
-        if not coll or video_id not in coll.video_ids:
-            return False
-        coll.video_ids.remove(video_id)
-        self.update_collection(coll)
+        with _STORAGE_LOCK:
+            data = self._read_collections()
+            if coll_id not in data:
+                return False
+            ids = data[coll_id].get("video_ids", [])
+            if video_id not in ids:
+                return False
+            ids.remove(video_id)
+            from datetime import datetime
+            data[coll_id]["updated_at"] = datetime.now().isoformat()
+            self._write_collections(data)
         return True
 
     def get_videos_in_collection(self, coll_id: str) -> list[Video]:

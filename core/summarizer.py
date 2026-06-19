@@ -153,20 +153,38 @@ class Summarizer:
     # ------------------------------------------------------------------ #
 
     def _parse_response(self, text: str) -> tuple[list, str]:
+        """Parse the structured BULLETS / PARAGRAPH response from the AI.
+
+        fix #7: track a dedicated 'in_paragraph' flag so stray lines after
+        the paragraph section (e.g. extra bullets from a non-conforming model)
+        are not appended to the paragraph string.
+        """
         bullets: list[str] = []
-        paragraph = ""
+        para_lines: list[str] = []
         mode = None
+
         for line in text.strip().split("\n"):
             stripped = line.strip()
-            if stripped.startswith("BULLETS:"):
+            if stripped.upper().startswith("BULLETS:"):
                 mode = "bullets"
-            elif stripped.startswith("PARAGRAPH:"):
+            elif stripped.upper().startswith("PARAGRAPH:"):
                 mode = "paragraph"
+                # Inline paragraph text on the same line as the header
+                inline = stripped[len("PARAGRAPH:"):].strip()
+                if inline:
+                    para_lines.append(inline)
             elif mode == "bullets" and stripped.startswith("-"):
                 bullets.append(stripped[1:].strip())
-            elif mode == "paragraph" and stripped:
-                paragraph += " " + stripped
-        return bullets, paragraph.strip()
+            elif mode == "paragraph":
+                # fix #7: stop collecting paragraph lines when we hit a new
+                # section marker or a bullet point (model formatting drift)
+                if stripped.upper().startswith("BULLETS:") or stripped.startswith("-"):
+                    mode = None  # stop collecting
+                elif stripped:
+                    para_lines.append(stripped)
+
+        paragraph = " ".join(para_lines).strip()
+        return bullets, paragraph
 
     def _basic_qa(self, transcript: str, question: str) -> str:
         clean    = self._clean_transcript(transcript)
