@@ -7,8 +7,36 @@ from typing import Optional
 # Matches [MM:SS], [H:MM:SS], [HH:MM:SS], [HHH:MM:SS] etc.
 _TIMESTAMP_RE = re.compile(r"\[\d+:\d{2}(?::\d{2})?\]\s*")
 
-# Current active Groq model (updated when Groq deprecates models)
-GROQ_MODEL = "llama-3.1-8b-instant"
+# Groq cascade: best quality first, fast fallback last.
+# On HTTP 429 (rate-limit) the next model in the list is tried automatically.
+GROQ_MODELS = [
+    "llama-3.3-70b-versatile",                         # best free quality, 1K RPD
+    "meta-llama/llama-4-scout-17b-16e-instruct",       # balanced, 1K RPD
+    "llama-3.1-8b-instant",                            # fast fallback, 14.4K RPD
+]
+
+
+def _groq_chat(messages: list, max_tokens: int) -> str:
+    """Try each GROQ_MODELS entry in order, skipping on 429 rate-limit errors."""
+    from groq import Groq  # type: ignore[import-untyped]
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    last_err: Exception = RuntimeError("No Groq models available.")
+    for model in GROQ_MODELS:
+        try:
+            r = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+            )
+            return r.choices[0].message.content or ""
+        except Exception as e:
+            last_err = e
+            # 429 = rate-limited on this model — try the next one
+            if "429" in str(e) or "rate_limit" in str(e).lower():
+                continue
+            # Any other error (bad key, network, etc.) — stop immediately
+            raise
+    raise last_err
 
 
 class Summarizer:
@@ -38,14 +66,10 @@ class Summarizer:
 
         try:
             if self.provider == "groq":
-                from groq import Groq  # type: ignore[import-untyped]
-                client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-                r = client.chat.completions.create(
-                    model=GROQ_MODEL,
-                    messages=[{"role": "user", "content": prompt}],
+                return _groq_chat(
+                    [{"role": "user", "content": prompt}],
                     max_tokens=512,
-                )
-                return r.choices[0].message.content or "No answer returned."
+                ) or "No answer returned."
 
             elif self.provider == "openai":
                 from openai import OpenAI  # type: ignore[import-untyped]
@@ -118,15 +142,11 @@ class Summarizer:
 
     def _summarize_groq(self, transcript: str, title: str) -> tuple[list, str]:
         try:
-            from groq import Groq  # type: ignore[import-untyped]
-            client = Groq(api_key=os.getenv("GROQ_API_KEY"))
             prompt = self._build_prompt(transcript, title)
-            response = client.chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[{"role": "user", "content": prompt}],
+            content = _groq_chat(
+                [{"role": "user", "content": prompt}],
                 max_tokens=1024,
             )
-            content = response.choices[0].message.content
             return self._parse_response(content) if content else self._summarize_basic(transcript)
         except Exception:
             return self._summarize_basic(transcript)

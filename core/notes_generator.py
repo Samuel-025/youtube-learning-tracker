@@ -3,8 +3,34 @@
 import os
 from typing import Optional
 
-# Current active Groq model (updated when Groq deprecates models)
-GROQ_MODEL = "llama-3.1-8b-instant"
+# Groq cascade: best quality first, fast fallback last.
+# On HTTP 429 (rate-limit) the next model in the list is tried automatically.
+GROQ_MODELS = [
+    "llama-3.3-70b-versatile",                         # best free quality, 1K RPD
+    "meta-llama/llama-4-scout-17b-16e-instruct",       # balanced, 1K RPD
+    "llama-3.1-8b-instant",                            # fast fallback, 14.4K RPD
+]
+
+
+def _groq_chat(messages: list, max_tokens: int) -> str:
+    """Try each GROQ_MODELS entry in order, skipping on 429 rate-limit errors."""
+    from groq import Groq  # type: ignore[import-untyped]
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    last_err: Exception = RuntimeError("No Groq models available.")
+    for model in GROQ_MODELS:
+        try:
+            r = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+            )
+            return r.choices[0].message.content or ""
+        except Exception as e:
+            last_err = e
+            if "429" in str(e) or "rate_limit" in str(e).lower():
+                continue
+            raise
+    raise last_err
 
 
 class NotesGenerator:
@@ -61,14 +87,10 @@ Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
                 raw_text = r.choices[0].message.content or ""
 
             elif self.provider == "groq":
-                from groq import Groq  # type: ignore[import-untyped]
-                client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-                r = client.chat.completions.create(
-                    model=GROQ_MODEL,
-                    messages=[{"role": "user", "content": prompt}],
+                raw_text = _groq_chat(
+                    [{"role": "user", "content": prompt}],
                     max_tokens=1024,
                 )
-                raw_text = r.choices[0].message.content or ""
 
             if not raw_text:
                 return []
