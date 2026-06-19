@@ -19,6 +19,7 @@ from core.summarizer import Summarizer
 from core.notes_generator import NotesGenerator
 from core.downloader import Downloader, ffmpeg_version
 from models.video import Video, WatchStatus
+from models.collection import Collection
 
 # ─── Page config
 st.set_page_config(
@@ -52,13 +53,14 @@ DOWNLOAD_MODES = {
     "📹 Video Best quality (MP4)": "video_best",
 }
 
+EMOJI_OPTIONS = ["📁", "📚", "🎥", "🧠", "💻", "🔬", "🎨", "🎵", "💼", "🌍", "⭐", "🔥", "💯", "🏆", "🛐"]
+
 
 # ╔══════════════════════════════════════════════════════
 # ║  HELPERS
 # ╚══════════════════════════════════════════════════════
 
 def _fmt_seconds(sec: int) -> str:
-    """Format seconds as H:MM:SS or M:SS."""
     sec = max(0, int(sec))
     h, rem = divmod(sec, 3600)
     m, s   = divmod(rem, 60)
@@ -68,18 +70,11 @@ def _fmt_seconds(sec: int) -> str:
 
 
 def _render_progress_bar(video: Video, compact: bool = False) -> None:
-    """Render a coloured progress bar + label.
-
-    compact=True  → small single-line version for library cards
-    compact=False → full version for detail page
-    """
     pct = video.progress_pct
     if video.duration_sec == 0:
-        return  # duration unknown, nothing to show
-
+        return
     watched_fmt = _fmt_seconds(video.watch_progress_sec)
     total_fmt   = _fmt_seconds(video.duration_sec)
-
     if compact:
         if pct > 0:
             st.progress(pct / 100, text=f"⏱ {watched_fmt} / {total_fmt} ({pct:.0f}%)")
@@ -93,29 +88,23 @@ def _render_progress_bar(video: Video, compact: bool = False) -> None:
 
 
 def _render_progress_controls(video: Video) -> None:
-    """Slider + quick-set buttons for watch progress."""
     vid = video.video_id
-
     if video.duration_sec == 0:
         st.info("ℹ️ Duration unknown — cannot track progress for this video.")
         return
-
     st.markdown("### ⏱ Watch Progress")
     _render_progress_bar(video, compact=False)
     st.caption("Drag the slider to update your progress, then click **Save**.")
-
     new_sec = st.slider(
         "Progress (seconds)",
         min_value=0,
         max_value=video.duration_sec,
         value=video.watch_progress_sec,
-        step=max(1, video.duration_sec // 200),   # ~0.5% steps
+        step=max(1, video.duration_sec // 200),
         format="%d s",
         key=f"progress_slider_{vid}",
         label_visibility="collapsed",
     )
-
-    # Quick-set buttons
     q_cols = st.columns(4)
     quick_values = [
         ("0%",   0),
@@ -127,18 +116,14 @@ def _render_progress_controls(video: Video) -> None:
         with col:
             if st.button(label, key=f"qset_{vid}_{label}", use_container_width=True):
                 video.watch_progress_sec = val
-                # Auto-set status on 100%
                 if val == video.duration_sec and video.status != WatchStatus.COMPLETED:
                     video.status = WatchStatus.COMPLETED
                 elif val == 0 and video.status == WatchStatus.COMPLETED:
                     video.status = WatchStatus.WATCHING
                 storage.update_video(video)
                 st.rerun()
-
-    # Save button
     if st.button("💾 Save Progress", key=f"save_prog_{vid}", type="primary"):
         video.watch_progress_sec = new_sec
-        # Auto-status: mark completed when slider reaches the end
         if new_sec >= video.duration_sec and video.status != WatchStatus.COMPLETED:
             video.status = WatchStatus.COMPLETED
             st.success("🎉 Marked as Completed!")
@@ -166,73 +151,51 @@ def _finish_add_video(video: Video) -> None:
 
 
 def _render_download_tab(video: Video) -> None:
-    """Download tab: audio or video via yt-dlp."""
     vid     = video.video_id
     has_ff  = downloader.has_ffmpeg()
     ff_ver  = ffmpeg_version()
-
     if not downloader.is_available():
         st.error("❌ yt-dlp not found.")
         st.code("py -3.11 -m pip install yt-dlp")
         return
-
     if has_ff:
         st.success(f"✅ FFmpeg detected — `{ff_ver.split('Copyright')[0].strip()}`  — all formats available.")
     else:
         st.warning(
             "⚠️ **FFmpeg not found on PATH.**\n\n"
             "Without FFmpeg:\n"
-            "- Audio → downloads as **.m4a** (has audio, no conversion)\n"
-            "- Video → downloads as **progressive MP4** (audio + video in one file, max ~720p)\n"
-            "- 1080p and Best modes fall back to 720p\n\n"
-            "To enable MP3 + full HD: install FFmpeg with `winget install --id Gyan.FFmpeg -e` then restart."
+            "- Audio → downloads as **.m4a**\n"
+            "- Video → downloads as **progressive MP4** (max ~720p)\n\n"
+            "Install: `winget install --id Gyan.FFmpeg -e` then restart."
         )
-
     st.markdown("### ⬇️ Download")
     st.caption(f"Saved to: `{root / 'downloads'}`")
-
     mode_labels = list(DOWNLOAD_MODES.keys())
-    if not has_ff:
-        mode_labels_display = [
+    mode_labels_display = (
+        [
             "🎧 Audio only (M4A — no FFmpeg)",
             "📹 Video 720p (MP4 progressive — no FFmpeg)",
             "📹 Video 1080p (falls back to 720p — no FFmpeg)",
             "📹 Video Best (progressive MP4 — no FFmpeg)",
         ]
-    else:
-        mode_labels_display = mode_labels
-
-    selected_display = st.selectbox(
-        "Format",
-        options=mode_labels_display,
-        key=f"dl_mode_{vid}",
+        if not has_ff else mode_labels
     )
+    selected_display = st.selectbox("Format", options=mode_labels_display, key=f"dl_mode_{vid}")
     mode = list(DOWNLOAD_MODES.values())[mode_labels_display.index(selected_display)]
-
     if video.local_path and Path(video.local_path).exists():
         st.success(f"✅ Already downloaded: `{Path(video.local_path).name}`")
         with open(video.local_path, "rb") as f:
             file_bytes = f.read()
         fname = Path(video.local_path).name
-        mime  = "audio/mpeg" if fname.endswith(".mp3") else (
-                "audio/mp4"  if fname.endswith(".m4a") else "video/mp4")
-        st.download_button(
-            label="📥 Save to computer",
-            data=file_bytes,
-            file_name=fname,
-            mime=mime,
-            key=f"dl_save_{vid}",
-        )
+        mime  = "audio/mpeg" if fname.endswith(".mp3") else ("audio/mp4" if fname.endswith(".m4a") else "video/mp4")
+        st.download_button(label="📥 Save to computer", data=file_bytes, file_name=fname, mime=mime, key=f"dl_save_{vid}")
         st.divider()
         st.caption("Re-download in a different format ↓")
-
     dl_key = f"dl_running_{vid}"
     if dl_key not in st.session_state:
         st.session_state[dl_key] = False
-
     if st.button("▶️ Start Download", key=f"dl_btn_{vid}", type="primary"):
         st.session_state[dl_key] = True
-
     if st.session_state[dl_key]:
         label_map = {v: k for k, v in DOWNLOAD_MODES.items()}
         with st.spinner(f"Downloading {label_map.get(mode, mode)} — may take a minute..."):
@@ -245,15 +208,8 @@ def _render_download_tab(video: Video) -> None:
                 with open(out_path, "rb") as f:
                     file_bytes = f.read()
                 fname = out_path.name
-                mime  = "audio/mpeg" if fname.endswith(".mp3") else (
-                        "audio/mp4"  if fname.endswith(".m4a") else "video/mp4")
-                st.download_button(
-                    label="📥 Save to computer",
-                    data=file_bytes,
-                    file_name=fname,
-                    mime=mime,
-                    key=f"dl_save_new_{vid}",
-                )
+                mime  = "audio/mpeg" if fname.endswith(".mp3") else ("audio/mp4" if fname.endswith(".m4a") else "video/mp4")
+                st.download_button(label="📥 Save to computer", data=file_bytes, file_name=fname, mime=mime, key=f"dl_save_new_{vid}")
             except RuntimeError as exc:
                 st.session_state[dl_key] = False
                 st.error(f"❌ Download failed:\n\n{exc}")
@@ -261,25 +217,20 @@ def _render_download_tab(video: Video) -> None:
 
 def _render_detail_page(video: Video) -> None:
     vid = video.video_id
-
-    if st.button("← Back to Library", key="back_btn"):
+    if st.button("← Back", key="back_btn"):
         st.session_state.pop("detail_video_id", None)
         st.rerun()
-
     col1, col2 = st.columns([1, 2])
     with col1:
         if video.thumbnail_url:
             st.image(video.thumbnail_url, width="stretch")
     with col2:
         st.title(video.title)
-        st.caption(
-            f"📺 {video.channel}  ·  ⏱ {video.duration}  ·  {(video.published_at or '')[:10]}"
-        )
+        st.caption(f"📺 {video.channel}  ·  ⏱ {video.duration}  ·  {(video.published_at or '')[:10]}")
         st.markdown(f"🔗 [Watch on YouTube]({video.url})")
         status_options = [s.value for s in WatchStatus]
         new_status = st.selectbox(
-            "Status",
-            options=status_options,
+            "Status", options=status_options,
             index=status_options.index(video.status.value),
             key=f"detail_status_{vid}",
             format_func=lambda s: f"{STATUS_COLORS.get(s, '⚪')} {s.capitalize()}",
@@ -288,11 +239,16 @@ def _render_detail_page(video: Video) -> None:
             video.status = WatchStatus(new_status)
             storage.update_video(video)
             st.rerun()
-        # Progress bar inline in header
         _render_progress_bar(video, compact=False)
 
+        # ── Collections badge row
+        colls = storage.get_collections_for_video(vid)
+        if colls:
+            badges = "  ".join(f"`{c.emoji} {c.name}`" for c in colls)
+            st.caption(f"📁 In: {badges}")
+
     st.divider()
-    tabs = st.tabs(["📝 Summary", "🗒️ Notes", "📄 Transcript", "❓ Ask", "⏱ Progress", "⬇️ Download"])
+    tabs = st.tabs(["📝 Summary", "🗒️ Notes", "📄 Transcript", "❓ Ask", "⏱ Progress", "📁 Collections", "⬇️ Download"])
 
     with tabs[0]:
         if video.summary_bullets:
@@ -304,9 +260,7 @@ def _render_detail_page(video: Video) -> None:
             if video.transcript_text:
                 if st.button("✨ Generate Summary", key=f"gen_sum_{vid}"):
                     with st.spinner("Generating..."):
-                        bullets, paragraph = summarizer.summarize(
-                            video.transcript_text, video.title
-                        )
+                        bullets, paragraph = summarizer.summarize(video.transcript_text, video.title)
                         video.summary_bullets   = bullets
                         video.summary_paragraph = paragraph
                         storage.update_video(video)
@@ -321,13 +275,7 @@ def _render_detail_page(video: Video) -> None:
                 st.markdown(f"• {n}")
             st.divider()
         st.markdown("**✍️ Your Notes:**")
-        new_notes = st.text_area(
-            "notes",
-            value=video.manual_notes or "",
-            key=f"notes_{vid}",
-            height=150,
-            label_visibility="collapsed",
-        )
+        new_notes = st.text_area("notes", value=video.manual_notes or "", key=f"notes_{vid}", height=150, label_visibility="collapsed")
         if st.button("💾 Save Notes", key=f"save_notes_{vid}"):
             video.manual_notes = new_notes
             storage.update_video(video)
@@ -336,14 +284,7 @@ def _render_detail_page(video: Video) -> None:
     with tabs[2]:
         if video.transcript_text:
             st.caption(f"Source: `{video.transcript_source or 'unknown'}`")
-            st.text_area(
-                "transcript",
-                value=video.transcript_text,
-                height=350,
-                key=f"transcript_{vid}",
-                disabled=True,
-                label_visibility="collapsed",
-            )
+            st.text_area("transcript", value=video.transcript_text, height=350, key=f"transcript_{vid}", disabled=True, label_visibility="collapsed")
         else:
             st.info("⚠️ No transcript yet.")
             col_p, col_u = st.columns(2)
@@ -377,19 +318,13 @@ def _render_detail_page(video: Video) -> None:
             answer_key = f"qa_answer_{vid}"
             if answer_key not in st.session_state:
                 st.session_state[answer_key] = ""
-            question = st.text_input(
-                "Ask a question about this video",
-                placeholder="e.g. What is the main concept explained?",
-                key=f"qa_input_{vid}",
-            )
+            question = st.text_input("Ask a question about this video", placeholder="e.g. What is the main concept explained?", key=f"qa_input_{vid}")
             if st.button("🔍 Get Answer", key=f"ask_btn_{vid}", type="primary"):
                 q = st.session_state.get(f"qa_input_{vid}", "").strip()
                 if q:
                     with st.spinner("🧠 Thinking..."):
                         try:
-                            ans = summarizer.answer_question(
-                                video.transcript_text, q, video.title
-                            )
+                            ans = summarizer.answer_question(video.transcript_text, q, video.title)
                             st.session_state[answer_key] = ans
                         except Exception as exc:
                             st.session_state[answer_key] = f"Error: {exc}"
@@ -407,6 +342,30 @@ def _render_detail_page(video: Video) -> None:
         _render_progress_controls(video)
 
     with tabs[5]:
+        # ── Collections tab on detail page
+        st.markdown("### 📁 Collections")
+        all_colls = storage.get_all_collections()
+        current_colls = storage.get_collections_for_video(vid)
+        current_ids   = {c.id for c in current_colls}
+
+        if not all_colls:
+            st.info("📦 No collections yet. Create one from the 📁 Collections page.")
+        else:
+            st.caption("Toggle to add or remove this video from a collection.")
+            for coll in all_colls:
+                in_coll = coll.id in current_ids
+                label   = f"{coll.emoji} {coll.name}  ({coll.video_count} videos)"
+                checked = st.checkbox(label, value=in_coll, key=f"coll_toggle_{vid}_{coll.id}")
+                if checked != in_coll:
+                    if checked:
+                        storage.add_video_to_collection(coll.id, vid)
+                        st.success(f"✅ Added to {coll.emoji} {coll.name}")
+                    else:
+                        storage.remove_video_from_collection(coll.id, vid)
+                        st.info(f"➖ Removed from {coll.emoji} {coll.name}")
+                    st.rerun()
+
+    with tabs[6]:
         _render_download_tab(video)
 
 
@@ -417,12 +376,10 @@ def _render_video_card(video: Video) -> None:
         title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
         st.markdown(f"**{title_display}**")
         st.caption(f"{video.channel} · {video.duration}")
-        # Mini progress bar on card
         _render_progress_bar(video, compact=True)
         status_options = [s.value for s in WatchStatus]
         new_status = st.selectbox(
-            "Status",
-            options=status_options,
+            "Status", options=status_options,
             index=status_options.index(video.status.value),
             key=f"status_{video.video_id}",
             label_visibility="collapsed",
@@ -446,13 +403,14 @@ with st.sidebar:
     st.divider()
     page = st.radio(
         "Navigate",
-        ["📊 Dashboard", "➕ Add Video", "📚 Library", "🔍 Search", "⚙️ Settings"],
+        ["📊 Dashboard", "➕ Add Video", "📚 Library", "📁 Collections", "🔍 Search", "⚙️ Settings"],
         label_visibility="collapsed",
     )
     if "_last_page" not in st.session_state:
         st.session_state["_last_page"] = page
     if st.session_state["_last_page"] != page:
         st.session_state.pop("detail_video_id", None)
+        st.session_state.pop("active_collection_id", None)
         st.session_state["_last_page"] = page
     st.divider()
     counts = storage.count_by_status()
@@ -461,6 +419,10 @@ with st.sidebar:
     c1, c2 = st.columns(2)
     c1.metric("🟢 Done",     counts.get("completed", 0))
     c2.metric("🟡 Watching", counts.get("watching",  0))
+    # Collections count in sidebar
+    n_colls = len(storage.get_all_collections())
+    if n_colls:
+        st.caption(f"📁 {n_colls} collection{'s' if n_colls != 1 else ''}")
 
 
 # ── Dashboard
@@ -482,7 +444,6 @@ if page == "📊 Dashboard":
         ):
             col.metric(f"{emoji} {status.capitalize()}", counts.get(status, 0))
 
-        # ── Overall watch-time progress summary
         all_vids = storage.get_all_videos()
         vids_with_duration = [v for v in all_vids if v.duration_sec > 0]
         if vids_with_duration:
@@ -583,14 +544,11 @@ elif page == "📚 Library":
     st.title("📚 Your Library")
     col_f, col_s = st.columns([2, 1])
     with col_f:
-        status_filter = st.selectbox(
-            "Filter", ["All", "saved", "watching", "completed", "dropped", "rewatch"]
-        )
+        status_filter = st.selectbox("Filter", ["All", "saved", "watching", "completed", "dropped", "rewatch"])
     with col_s:
         sort_by = st.selectbox("Sort", ["Recently updated", "Title A–Z", "Progress ↑", "Progress ↓"])
     videos = (
-        storage.get_all_videos()
-        if status_filter == "All"
+        storage.get_all_videos() if status_filter == "All"
         else storage.filter_by_status(WatchStatus(status_filter))
     )
     if sort_by == "Title A–Z":
@@ -611,6 +569,164 @@ elif page == "📚 Library":
                 _render_video_card(video)
 
 
+# ── Collections
+elif page == "📁 Collections":
+    if "detail_video_id" in st.session_state:
+        v = storage.get_video(st.session_state["detail_video_id"])
+        if v:
+            _render_detail_page(v)
+            st.stop()
+
+    # ── Viewing a single collection
+    if "active_collection_id" in st.session_state:
+        coll = storage.get_collection(st.session_state["active_collection_id"])
+        if coll:
+            if st.button("← Back to Collections", key="back_to_colls"):
+                st.session_state.pop("active_collection_id", None)
+                st.rerun()
+
+            # Header
+            h_col1, h_col2 = st.columns([3, 1])
+            with h_col1:
+                st.title(f"{coll.emoji} {coll.name}")
+                if coll.description:
+                    st.caption(coll.description)
+                st.caption(f"{coll.video_count} video{'s' if coll.video_count != 1 else ''}")
+            with h_col2:
+                # Rename / edit
+                with st.expander("✏️ Edit"):
+                    new_name = st.text_input("Name", value=coll.name, key="edit_coll_name")
+                    new_desc = st.text_input("Description", value=coll.description, key="edit_coll_desc")
+                    new_emoji = st.selectbox("Emoji", EMOJI_OPTIONS,
+                                             index=EMOJI_OPTIONS.index(coll.emoji) if coll.emoji in EMOJI_OPTIONS else 0,
+                                             key="edit_coll_emoji")
+                    if st.button("💾 Save Changes", key="save_coll_edit"):
+                        coll.name        = new_name.strip() or coll.name
+                        coll.description = new_desc.strip()
+                        coll.emoji       = new_emoji
+                        storage.update_collection(coll)
+                        st.success("✅ Saved.")
+                        st.rerun()
+
+            st.divider()
+
+            # Videos in this collection
+            coll_videos = storage.get_videos_in_collection(coll.id)
+            if not coll_videos:
+                st.info("📦 No videos yet. Open any video → 📁 Collections tab to add it here.")
+            else:
+                v_cols = st.columns(3)
+                for i, video in enumerate(coll_videos):
+                    with v_cols[i % 3]:
+                        with st.container(border=True):
+                            if video.thumbnail_url:
+                                st.image(video.thumbnail_url, width="stretch")
+                            title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
+                            st.markdown(f"**{title_display}**")
+                            st.caption(f"{video.channel} · {video.duration}")
+                            _render_progress_bar(video, compact=True)
+                            btn_cols = st.columns(2)
+                            with btn_cols[0]:
+                                if st.button("📌 View", key=f"coll_view_{coll.id}_{video.video_id}", use_container_width=True):
+                                    st.session_state["detail_video_id"] = video.video_id
+                                    st.rerun()
+                            with btn_cols[1]:
+                                if st.button("➖ Remove", key=f"coll_rm_{coll.id}_{video.video_id}", use_container_width=True):
+                                    storage.remove_video_from_collection(coll.id, video.video_id)
+                                    st.rerun()
+
+            st.divider()
+            # Add videos to this collection from full library
+            with st.expander("➕ Add videos to this collection"):
+                all_vids  = storage.get_all_videos()
+                not_in    = [v for v in all_vids if v.video_id not in coll.video_ids]
+                if not not_in:
+                    st.info("✅ All your saved videos are already in this collection.")
+                else:
+                    search_q = st.text_input("Filter videos", placeholder="Type to filter...", key=f"coll_add_search_{coll.id}")
+                    filtered = [v for v in not_in if search_q.lower() in v.title.lower() or search_q.lower() in v.channel.lower()] if search_q else not_in
+                    for v in filtered[:20]:   # cap at 20 to keep UI snappy
+                        a_cols = st.columns([3, 1])
+                        with a_cols[0]:
+                            st.caption(f"{v.title[:60]}  ·  {v.channel}")
+                        with a_cols[1]:
+                            if st.button("➕ Add", key=f"add_to_coll_{coll.id}_{v.video_id}", use_container_width=True):
+                                storage.add_video_to_collection(coll.id, v.video_id)
+                                st.rerun()
+                    if len(filtered) > 20:
+                        st.caption(f"...and {len(filtered) - 20} more. Use the filter to narrow down.")
+            st.stop()
+
+    # ── Collections list view
+    st.title("📁 Collections")
+    all_colls = storage.get_all_collections()
+
+    # Create new collection form
+    with st.expander("➕ Create new collection", expanded=len(all_colls) == 0):
+        with st.form("new_coll_form", clear_on_submit=True):
+            f_col1, f_col2, f_col3 = st.columns([2, 1, 1])
+            with f_col1:
+                new_name = st.text_input("Collection name", placeholder="e.g. Python Course, AI Papers")
+            with f_col2:
+                new_emoji = st.selectbox("Emoji", EMOJI_OPTIONS)
+            with f_col3:
+                new_desc = st.text_input("Description (optional)")
+            if st.form_submit_button("➕ Create", type="primary"):
+                if new_name.strip():
+                    coll = Collection(name=new_name.strip(), emoji=new_emoji, description=new_desc.strip())
+                    storage.save_collection(coll)
+                    st.success(f"✅ Created “{new_emoji} {new_name.strip()}”")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Name cannot be empty.")
+
+    if not all_colls:
+        st.info("📦 No collections yet. Create one above to organise your library.")
+    else:
+        st.caption(f"{len(all_colls)} collection{'s' if len(all_colls) != 1 else ''}")
+        # Render collection cards in a 3-column grid
+        c_cols = st.columns(3)
+        for i, coll in enumerate(all_colls):
+            with c_cols[i % 3]:
+                with st.container(border=True):
+                    st.markdown(f"### {coll.emoji} {coll.name}")
+                    if coll.description:
+                        st.caption(coll.description)
+                    # Progress summary for this collection
+                    coll_vids = storage.get_videos_in_collection(coll.id)
+                    total_in  = len(coll_vids)
+                    done_in   = sum(1 for v in coll_vids if v.status == WatchStatus.COMPLETED)
+                    st.caption(f"{total_in} video{'s' if total_in != 1 else ''}  ·  {done_in} completed")
+                    if total_in > 0:
+                        vids_dur = [v for v in coll_vids if v.duration_sec > 0]
+                        if vids_dur:
+                            t_sec = sum(v.duration_sec for v in vids_dur)
+                            w_sec = sum(v.watch_progress_sec for v in vids_dur)
+                            pct   = w_sec / t_sec if t_sec else 0
+                            st.progress(pct, text=f"{pct*100:.0f}% watched")
+                    card_cols = st.columns(2)
+                    with card_cols[0]:
+                        if st.button("📂 Open", key=f"open_coll_{coll.id}", use_container_width=True, type="primary"):
+                            st.session_state["active_collection_id"] = coll.id
+                            st.rerun()
+                    with card_cols[1]:
+                        if st.button("🗑️ Delete", key=f"del_coll_{coll.id}", use_container_width=True):
+                            st.session_state[f"del_armed_{coll.id}"] = True
+                            st.rerun()
+                    if st.session_state.get(f"del_armed_{coll.id}"):
+                        st.error(f"Delete “{coll.name}”? Videos are kept.")
+                        yes_col, no_col = st.columns(2)
+                        with yes_col:
+                            if st.button("✅ Yes", key=f"del_yes_{coll.id}", use_container_width=True):
+                                storage.delete_collection(coll.id)
+                                st.session_state.pop(f"del_armed_{coll.id}", None)
+                                st.rerun()
+                        with no_col:
+                            if st.button("❌ No", key=f"del_no_{coll.id}", use_container_width=True):
+                                st.session_state.pop(f"del_armed_{coll.id}", None)
+                                st.rerun()
+
+
 # ── Search
 elif page == "🔍 Search":
     if "detail_video_id" in st.session_state:
@@ -619,10 +735,7 @@ elif page == "🔍 Search":
             _render_detail_page(v)
             st.stop()
     st.title("🔍 Search Library")
-    query = st.text_input(
-        "Search by title, channel, notes, or summary",
-        placeholder="e.g. Python, React, machine learning",
-    )
+    query = st.text_input("Search by title, channel, notes, or summary", placeholder="e.g. Python, React, machine learning")
     if query:
         results = storage.search_videos(query)
         st.write(f"**{len(results)} result(s)** for `{query}`")
@@ -674,6 +787,8 @@ elif page == "⚙️ Settings":
     st.write(f"💾 **Storage size:** {storage.get_storage_size()}")
     st.write(f"📊 **Total saved:** {sum(storage.count_by_status().values())}")
     st.write(f"📂 **Downloads folder:** `{root / 'downloads'}`")
+    n_colls = len(storage.get_all_collections())
+    st.write(f"📁 **Collections:** {n_colls}")
 
     if not ff_ver:
         st.warning(
@@ -683,24 +798,18 @@ elif page == "⚙️ Settings":
 
     st.divider()
     st.subheader("🔄 Update yt-dlp")
-    st.caption(
-        "YouTube frequently changes its download protection. "
-        "Keeping yt-dlp up-to-date fixes signature errors, missing formats, and muted downloads."
-    )
-
+    st.caption("YouTube frequently changes its download protection. Keeping yt-dlp up-to-date fixes signature errors, missing formats, and muted downloads.")
     if "ytdlp_update_log" not in st.session_state:
         st.session_state["ytdlp_update_log"] = ""
     if "ytdlp_update_done" not in st.session_state:
         st.session_state["ytdlp_update_done"] = False
-
     col_btn, col_ver = st.columns([1, 2])
     with col_btn:
         if st.button("⬆️ Update yt-dlp now", type="primary", key="ytdlp_update_btn"):
             with st.spinner("Running `pip install -U yt-dlp` ..."):
                 result = subprocess.run(
                     [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
-                    capture_output=True,
-                    text=True,
+                    capture_output=True, text=True,
                 )
             log = (result.stdout + result.stderr).strip()
             st.session_state["ytdlp_update_log"]  = log
@@ -708,13 +817,10 @@ elif page == "⚙️ Settings":
             st.rerun()
     with col_ver:
         if ytdlp_ver:
-            st.info(f"Current version: **{ytdlp_ver}**  \nTo apply the update, restart Streamlit after upgrading.")
-
+            st.info(f"Current version: **{ytdlp_ver}**  \nRestart Streamlit after upgrading.")
     if st.session_state["ytdlp_update_log"]:
         if st.session_state["ytdlp_update_done"]:
-            last_line = [
-                l for l in st.session_state["ytdlp_update_log"].splitlines() if l.strip()
-            ][-1]
+            last_line = [l for l in st.session_state["ytdlp_update_log"].splitlines() if l.strip()][-1]
             st.success(f"✅ Update complete — {last_line}")
             st.caption("♻️ Restart Streamlit (`Ctrl+C` then `run.ps1`) to load the new version.")
         else:
