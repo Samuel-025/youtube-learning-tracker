@@ -8,6 +8,32 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
+## [v0.5.1] — 2026-06-19
+
+### Fixed
+- **Downloader: videos now play correctly in Windows Media Player**
+  - Root cause: YouTube serves AV1 video codec by default; Windows Media Player cannot decode AV1
+  - Fix: format strings now explicitly prefer **H.264 (`vcodec^=avc1`)** with progressive fallbacks
+  - All downloads are now compatible with Windows Media Player, VLC, Edge, Chrome, and all devices
+- **FFmpeg location passed directly to yt-dlp** via `ffmpeg_location` option (parent directory of binary)
+  - Eliminates PATH lookup ambiguity inside yt-dlp on Windows (WinGet installs FFmpeg to a non-standard location)
+- **Audio stream validation** after every video download using `ffprobe`
+  - If a file has no audio stream it is deleted immediately and a clear `RuntimeError` is raised
+  - Never silently saves a muted file again
+- **yt-dlp warnings surfaced** — signature/n-challenge warnings stored in `Downloader.last_warnings`
+  - Previously swallowed silently; now visible for debugging
+- **FFmpeg status banner** in Download tab
+  - Green ✅ with version string when FFmpeg detected
+  - Yellow ⚠️ with install instructions when FFmpeg missing
+  - Format labels change to reflect no-FFmpeg limitations (M4A instead of MP3, progressive MP4)
+- **Settings page** now shows FFmpeg version alongside yt-dlp and youtube-transcript-api status
+
+### Changed
+- `core/downloader.py` — complete rewrite of `_build_opts()` with H.264-first format strings and 5-level fallback chain
+- `app/streamlit_app.py` — Download tab shows FFmpeg banner; error messages now display full `RuntimeError` detail
+
+---
+
 ## [v0.5.0] — 2026-06-19
 
 ### Added
@@ -23,16 +49,16 @@ All notable changes to YouTube Learning Tracker are documented here.
   - Re-shows previously downloaded file if `local_path` still exists on disk
 - **Security hardening**
   - `downloads/` folder added to `.gitignore` with `.gitkeep` placeholder
-  - All media extensions (`.mp3`, `.mp4`, `.mkv`, `.webm`, `.m4a`, `.wav`, etc.) blocked globally
+  - All media extensions blocked globally
   - `requirements.txt` updated with clear FFmpeg installation instructions
 
 ### Changed
-- `models/video.py` — added `local_path: str = ""` field (backward-compatible, safe loader ignores it on old data)
+- `models/video.py` — added `local_path: str = ""` field
 - `app/streamlit_app.py` — detail page now has 5 tabs: Summary / Notes / Transcript / Ask / Download
 - Settings page now shows yt-dlp version, `downloads/` folder path
 
 ### Fixed
-- Prevented accidental `pip install ffmpeg` confusion — requirements.txt now documents the correct system binary install method
+- Prevented accidental `pip install ffmpeg` confusion in requirements.txt
 
 ---
 
