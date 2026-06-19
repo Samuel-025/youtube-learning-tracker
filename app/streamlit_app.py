@@ -256,6 +256,15 @@ def _render_download_tab(video: Video) -> None:
 
 def _render_detail_page(video: Video) -> None:
     vid = video.video_id
+
+    # ── Always re-fetch from storage so the status selectbox index reflects
+    #    any status change made by _apply_progress on the previous rerun.
+    #    Without this, Streamlit restores the selectbox to its cached (stale)
+    #    value and immediately overwrites the newly-saved status.
+    fresh = storage.get_video(vid)
+    if fresh is not None:
+        video = fresh
+
     if st.button("← Back", key="back_btn"):
         st.session_state.pop("detail_video_id", None)
         st.rerun()
