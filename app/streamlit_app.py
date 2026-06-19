@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 
-# ─── Path & env setup ───────────────────────────────────────────────────────────────────
+# ─── Path & env setup ───────────────────────────────────────────────────────
 root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root))
 load_dotenv(root / ".env")
@@ -18,7 +18,7 @@ from core.summarizer import Summarizer
 from core.notes_generator import NotesGenerator
 from models.video import Video, WatchStatus
 
-# ─── Page config ────────────────────────────────────────────────────────────────────
+# ─── Page config ────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="YouTube Learning Tracker",
     page_icon="📺",
@@ -26,7 +26,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ─── Init services ────────────────────────────────────────────────────────────────────
+# ─── Init services ──────────────────────────────────────────────────────────
 storage_path = os.getenv("STORAGE_PATH", str(root / "data" / "videos.json"))
 storage = Storage(storage_path)
 fetcher = YouTubeFetcher()
@@ -43,9 +43,34 @@ STATUS_COLORS = {
 }
 
 
-# ╔════════════════════════════════════════════════════════════════════════╗
-# ║  COMPONENT FUNCTIONS                                                     ║
-# ╚════════════════════════════════════════════════════════════════════════╝
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  HELPER FUNCTIONS  (all defs must live here, before page routing)        ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
+
+def _finish_add_video(
+    video: Video,
+    store: Storage,
+    summ: Summarizer,
+    ng: NotesGenerator,
+    ext: TranscriptExtractor,
+) -> None:
+    """Generate summary + notes, save, and clean up session state."""
+    with st.spinner("✨ Generating summary and notes..."):
+        try:
+            bullets, paragraph = summ.summarize(video.transcript_text, video.title)
+            video.summary_bullets = bullets
+            video.summary_paragraph = paragraph
+            video.auto_notes = ng.generate_auto_notes(video.transcript_text, video.title)
+            st.success("✅ Summary and notes generated.")
+        except Exception as e:
+            st.warning(f"⚠️ AI summary skipped (check API key): {e}")
+
+    store.save_video(video)
+    st.session_state.pop("pending_video", None)
+    st.session_state["pending_transcript_done"] = True
+    st.balloons()
+    st.success("✅ Video saved to your library! Go to 📚 Library to view it.")
+
 
 def _render_video_detail(video: Video, store: Storage) -> None:
     """Render full video detail in an expander."""
@@ -65,7 +90,7 @@ def _render_video_detail(video: Video, store: Storage) -> None:
 
         tabs = st.tabs(["📝 Summary", "🗒️ Notes", "📄 Transcript", "❓ Ask"])
 
-        # ─ Summary tab ──────────────────────────────────────────────────────────────────
+        # ─ Summary tab ──────────────────────────────────────────────────────
         with tabs[0]:
             if video.summary_bullets:
                 for b in video.summary_bullets:
@@ -86,14 +111,14 @@ def _render_video_detail(video: Video, store: Storage) -> None:
                 else:
                     st.warning("⚠️ Add a transcript first to generate a summary.")
 
-        # ─ Notes tab ──────────────────────────────────────────────────────────────────
+        # ─ Notes tab ────────────────────────────────────────────────────────
         with tabs[1]:
             if video.auto_notes:
-                st.markdown("⁠**🤖 Auto Notes:**")
+                st.markdown("**🤖 Auto Notes:**")
                 for n in video.auto_notes:
                     st.markdown(f"• {n}")
                 st.divider()
-            st.markdown("⁠**✍️ Your Notes:**")
+            st.markdown("**✍️ Your Notes:**")
             new_notes = st.text_area(
                 "notes",
                 value=video.manual_notes or "",
@@ -106,7 +131,7 @@ def _render_video_detail(video: Video, store: Storage) -> None:
                 store.update_video(video)
                 st.success("✅ Notes saved.")
 
-        # ─ Transcript tab ───────────────────────────────────────────────────────────
+        # ─ Transcript tab ───────────────────────────────────────────────────
         with tabs[2]:
             if video.transcript_text:
                 src = video.transcript_source or "unknown"
@@ -121,7 +146,7 @@ def _render_video_detail(video: Video, store: Storage) -> None:
                 )
             else:
                 st.info("⚠️ No transcript yet. Paste it below or upload a .txt file.")
-                paste_key   = f"paste_{vid}"
+                paste_key = f"paste_{vid}"
                 col_p, col_u = st.columns(2)
                 with col_p:
                     pasted = st.text_area(
@@ -155,7 +180,7 @@ def _render_video_detail(video: Video, store: Storage) -> None:
                                 st.success("✅ Transcript saved from file!")
                                 st.rerun()
 
-        # ─ Ask tab ──────────────────────────────────────────────────────────────────────
+        # ─ Ask tab ──────────────────────────────────────────────────────────
         with tabs[3]:
             if not video.transcript_text:
                 st.warning("⚠️ Add a transcript first to ask questions.")
@@ -219,11 +244,11 @@ def _render_video_card(video: Video, store: Storage) -> None:
             _render_video_detail(video, store)
 
 
-# ╔════════════════════════════════════════════════════════════════════════╗
-# ║  PAGE RENDERS                                                            ║
-# ╚════════════════════════════════════════════════════════════════════════╝
+# ╔══════════════════════════════════════════════════════════════════════════╗
+# ║  PAGE ROUTING  (if/elif chain — no defs allowed inside here)             ║
+# ╚══════════════════════════════════════════════════════════════════════════╝
 
-# ─ Sidebar ──────────────────────────────────────────────────────────────────────────
+# ─ Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 📺 YT Learning Tracker")
     st.divider()
@@ -241,7 +266,7 @@ with st.sidebar:
     c2.metric("🟡 Watching", counts.get("watching", 0))
 
 
-# ─ Dashboard ───────────────────────────────────────────────────────────────────────
+# ─ Dashboard ────────────────────────────────────────────────────────────────
 if page == "📊 Dashboard":
     st.title("📊 Dashboard")
     videos = storage.get_all_videos()
@@ -265,11 +290,10 @@ if page == "📊 Dashboard":
                 _render_video_card(video, storage)
 
 
-# ─ Add Video ──────────────────────────────────────────────────────────────────────
+# ─ Add Video ────────────────────────────────────────────────────────────────
 elif page == "➕ Add Video":
     st.title("➕ Add New Video")
 
-    # — Step 1: URL input form —
     with st.form("add_video_form"):
         url = st.text_input(
             "YouTube URL",
@@ -277,9 +301,6 @@ elif page == "➕ Add Video":
         )
         submitted = st.form_submit_button("Fetch & Save", type="primary")
 
-    # Persist fetched video across reruns using session_state.
-    # After form submit, video data is stored in session_state["pending_video"].
-    # Subsequent button clicks (paste/upload) keep the data alive without re-fetching.
     if submitted and url:
         with st.spinner("📡 Fetching video info..."):
             try:
@@ -295,7 +316,6 @@ elif page == "➕ Add Video":
         st.session_state["pending_video"] = fetched
         st.session_state["pending_transcript_done"] = False
 
-    # Render the pending-video workflow if one is in session
     if "pending_video" in st.session_state and not st.session_state.get("pending_transcript_done"):
         video: Video = st.session_state["pending_video"]
 
@@ -310,7 +330,6 @@ elif page == "➕ Add Video":
             published = (video.published_at or "")[:10]
             st.markdown(f"**Published:** {published}")
 
-        # Auto-extract transcript only once
         if not video.transcript_text:
             with st.spinner("📄 Extracting transcript..."):
                 transcript, source = extractor.extract(video.video_id)
@@ -321,10 +340,8 @@ elif page == "➕ Add Video":
                 st.success(f"✅ Transcript extracted via `{source}` with timestamps")
 
         if video.transcript_text:
-            # Already have a transcript — go straight to save
             _finish_add_video(video, storage, summarizer, notes_gen, extractor)
         else:
-            # No auto transcript — show manual input, persisted across reruns
             st.warning("⚠️ Auto transcript not available. Paste or upload below.")
             paste_tab, upload_tab = st.tabs(["Paste Transcript", "Upload .txt File"])
 
@@ -351,32 +368,7 @@ elif page == "➕ Add Video":
                         st.rerun()
 
 
-def _finish_add_video(
-    video: Video,
-    store: Storage,
-    summ: Summarizer,
-    ng: NotesGenerator,
-    ext: TranscriptExtractor,
-) -> None:
-    """Generate summary + notes, save, and clean up session state."""
-    with st.spinner("✨ Generating summary and notes..."):
-        try:
-            bullets, paragraph = summ.summarize(video.transcript_text, video.title)
-            video.summary_bullets = bullets
-            video.summary_paragraph = paragraph
-            video.auto_notes = ng.generate_auto_notes(video.transcript_text, video.title)
-            st.success("✅ Summary and notes generated.")
-        except Exception as e:
-            st.warning(f"⚠️ AI summary skipped (check API key): {e}")
-
-    store.save_video(video)
-    st.session_state.pop("pending_video", None)
-    st.session_state["pending_transcript_done"] = True
-    st.balloons()
-    st.success("✅ Video saved to your library! Go to 📚 Library to view it.")
-
-
-# ─ Library ──────────────────────────────────────────────────────────────────────────
+# ─ Library ──────────────────────────────────────────────────────────────────
 elif page == "📚 Library":
     st.title("📚 Your Library")
 
@@ -409,7 +401,7 @@ elif page == "📚 Library":
                 _render_video_card(video, storage)
 
 
-# ─ Search ──────────────────────────────────────────────────────────────────────────
+# ─ Search ───────────────────────────────────────────────────────────────────
 elif page == "🔍 Search":
     st.title("🔍 Search Library")
     query = st.text_input(
@@ -428,7 +420,7 @@ elif page == "🔍 Search":
             st.info("🔍 No results found. Try a different keyword.")
 
 
-# ─ Settings ──────────────────────────────────────────────────────────────────────
+# ─ Settings ─────────────────────────────────────────────────────────────────
 elif page == "⚙️ Settings":
     st.title("⚙️ Settings")
     st.info("🔑 API keys are loaded from `.env` file. They are gitignored and never uploaded.")
