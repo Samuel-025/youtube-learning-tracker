@@ -3,34 +3,7 @@
 import os
 from typing import Optional
 
-# Groq cascade: best quality first, fast fallback last.
-# On HTTP 429 (rate-limit) the next model in the list is tried automatically.
-GROQ_MODELS = [
-    "llama-3.3-70b-versatile",                         # best free quality, 1K RPD
-    "meta-llama/llama-4-scout-17b-16e-instruct",       # balanced, 1K RPD
-    "llama-3.1-8b-instant",                            # fast fallback, 14.4K RPD
-]
-
-
-def _groq_chat(messages: list, max_tokens: int) -> str:
-    """Try each GROQ_MODELS entry in order, skipping on 429 rate-limit errors."""
-    from groq import Groq  # type: ignore[import-untyped]
-    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    last_err: Exception = RuntimeError("No Groq models available.")
-    for model in GROQ_MODELS:
-        try:
-            r = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=max_tokens,
-            )
-            return r.choices[0].message.content or ""
-        except Exception as e:
-            last_err = e
-            if "429" in str(e) or "rate_limit" in str(e).lower():
-                continue
-            raise
-    raise last_err
+from core import groq_chat  # centralised Groq cascade
 
 
 class NotesGenerator:
@@ -50,20 +23,20 @@ class NotesGenerator:
         return self._basic_notes(transcript)
 
     def _ai_notes(self, transcript: str, title: str) -> list[str]:
-        prompt = f"""You are a learning assistant. From the transcript below, extract:
-- Key concepts and definitions
-- Important facts and figures
-- Action items or things to remember
-- Questions worth thinking about
-
-Format as bullet points starting with '- '.
-
-Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
+        prompt = (
+            "You are a learning assistant. From the transcript below, extract:\n"
+            "- Key concepts and definitions\n"
+            "- Important facts and figures\n"
+            "- Action items or things to remember\n"
+            "- Questions worth thinking about\n\n"
+            "Format as bullet points starting with '- '.\n\n"
+            f"Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"
+        )
         try:
-            raw_text: str = ""
+            raw_text = ""
 
             if self.provider == "anthropic":
-                import anthropic
+                import anthropic  # type: ignore[import-untyped]
                 from anthropic.types import TextBlock
                 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
                 msg = client.messages.create(
@@ -87,23 +60,19 @@ Video: {title}\n\nTranscript (first 5000 chars):\n{transcript[:5000]}"""
                 raw_text = r.choices[0].message.content or ""
 
             elif self.provider == "groq":
-                raw_text = _groq_chat(
+                raw_text = groq_chat(
                     [{"role": "user", "content": prompt}],
                     max_tokens=1024,
                 )
 
-            if not raw_text:
-                return []
-
             return [
                 line.strip()[1:].strip()
-                for line in raw_text.split("\n")
+                for line in (raw_text or "").split("\n")
                 if line.strip().startswith("-")
             ]
         except Exception:
             return []
 
     def _basic_notes(self, transcript: str) -> list[str]:
-        """Fallback: extract longer sentences as study points."""
         sentences = [s.strip() for s in transcript.split(".") if len(s.strip()) > 60]
         return [s + "." for s in sentences[:8]]

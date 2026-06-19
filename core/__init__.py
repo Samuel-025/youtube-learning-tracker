@@ -1,42 +1,48 @@
-"""Core package — lazy imports to avoid hard crash on missing dependencies."""
-# Classes are imported lazily so a missing optional dependency
-# (e.g. google-api-python-client, anthropic, groq) only errors when
-# that specific feature is used, not at app startup.
+"""
+core package — shared constants and utilities.
+"""
 
-from __future__ import annotations
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .storage import Storage
-    from .youtube_fetcher import YouTubeFetcher
-    from .transcript_extractor import TranscriptExtractor
-    from .summarizer import Summarizer
-    from .notes_generator import NotesGenerator
-
-
-def __getattr__(name: str):
-    if name == "Storage":
-        from .storage import Storage
-        return Storage
-    if name == "YouTubeFetcher":
-        from .youtube_fetcher import YouTubeFetcher
-        return YouTubeFetcher
-    if name == "TranscriptExtractor":
-        from .transcript_extractor import TranscriptExtractor
-        return TranscriptExtractor
-    if name == "Summarizer":
-        from .summarizer import Summarizer
-        return Summarizer
-    if name == "NotesGenerator":
-        from .notes_generator import NotesGenerator
-        return NotesGenerator
-    raise AttributeError(f"module 'core' has no attribute {name!r}")
-
-
-__all__ = [
-    "Storage",
-    "YouTubeFetcher",
-    "TranscriptExtractor",
-    "Summarizer",
-    "NotesGenerator",
+# ---------------------------------------------------------------------------
+# Groq model cascade
+# ---------------------------------------------------------------------------
+# Models are tried in order. On HTTP 429 (rate-limited) the next model is
+# attempted automatically.  Any other error surfaces immediately.
+#
+# Limits as of June 2026 (free tier):
+#   llama-3.3-70b-versatile                      1 K RPD / 6 K RPM
+#   meta-llama/llama-4-scout-17b-16e-instruct    1 K RPD / 500 RPM
+#   llama-3.1-8b-instant                        14.4 K RPD / 14.4 K RPM
+# ---------------------------------------------------------------------------
+GROQ_MODELS: list[str] = [
+    "llama-3.3-70b-versatile",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3.1-8b-instant",
 ]
+
+
+def groq_chat(messages: list, max_tokens: int) -> str:
+    """
+    Call Groq with model cascade.  Tries GROQ_MODELS in order,
+    skipping to the next model on 429 / rate_limit errors.
+    """
+    import os
+    from groq import Groq  # type: ignore[import-untyped]
+
+    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    last_err: Exception = RuntimeError("No Groq models available.")
+
+    for model in GROQ_MODELS:
+        try:
+            r = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                max_tokens=max_tokens,
+            )
+            return r.choices[0].message.content or ""
+        except Exception as exc:
+            last_err = exc
+            if "429" in str(exc) or "rate_limit" in str(exc).lower() or "model_decommissioned" in str(exc).lower():
+                continue
+            raise
+
+    raise last_err
