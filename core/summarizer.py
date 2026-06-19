@@ -31,7 +31,7 @@ class Summarizer:
 
         try:
             if self.provider == "groq":
-                from groq import Groq
+                from groq import Groq  # type: ignore[import-untyped]
                 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
                 r = client.chat.completions.create(
                     model="llama3-8b-8192",
@@ -40,7 +40,7 @@ class Summarizer:
                 )
                 return r.choices[0].message.content or "No answer returned."
             elif self.provider == "openai":
-                from openai import OpenAI
+                from openai import OpenAI  # type: ignore[import-untyped]
                 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
                 r = client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -49,27 +49,26 @@ class Summarizer:
                 )
                 return r.choices[0].message.content or "No answer returned."
             elif self.provider == "anthropic":
-                import anthropic
+                import anthropic  # type: ignore[import-untyped]
                 client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
                 msg = client.messages.create(
                     model="claude-3-haiku-20240307",
                     max_tokens=512,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                # Only TextBlock has .text — filter explicitly
+                # Only TextBlock has .text — cast after isinstance check
                 for block in msg.content:
                     if hasattr(block, "text"):
-                        return str(block.text)
+                        return str(block.text)  # type: ignore[union-attr]
                 return "No answer returned."
         except Exception as e:
             return f"Could not answer: {e}"
 
-        # Fallback: basic keyword search in transcript
         return self._basic_qa(transcript, question)
 
     def _summarize_anthropic(self, transcript: str, title: str) -> tuple[list, str]:
         try:
-            import anthropic
+            import anthropic  # type: ignore[import-untyped]
             client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
             prompt = self._build_prompt(transcript, title)
             message = client.messages.create(
@@ -81,7 +80,7 @@ class Summarizer:
             text = ""
             for block in message.content:
                 if hasattr(block, "text"):
-                    text = str(block.text)
+                    text = str(block.text)  # type: ignore[union-attr]
                     break
             return self._parse_response(text) if text else self._summarize_basic(transcript)
         except Exception:
@@ -89,7 +88,7 @@ class Summarizer:
 
     def _summarize_openai(self, transcript: str, title: str) -> tuple[list, str]:
         try:
-            from openai import OpenAI
+            from openai import OpenAI  # type: ignore[import-untyped]
             client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
             prompt = self._build_prompt(transcript, title)
             response = client.chat.completions.create(
@@ -104,7 +103,7 @@ class Summarizer:
 
     def _summarize_groq(self, transcript: str, title: str) -> tuple[list, str]:
         try:
-            from groq import Groq
+            from groq import Groq  # type: ignore[import-untyped]
             client = Groq(api_key=os.getenv("GROQ_API_KEY"))
             prompt = self._build_prompt(transcript, title)
             response = client.chat.completions.create(

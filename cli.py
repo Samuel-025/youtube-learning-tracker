@@ -3,15 +3,15 @@
 import argparse
 import sys
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # type: ignore[import-untyped]
 
 load_dotenv()
 
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
-from rich import box
+from rich.console import Console  # type: ignore[import-untyped]
+from rich.table import Table      # type: ignore[import-untyped]
+from rich.panel import Panel      # type: ignore[import-untyped]
+from rich.text import Text        # type: ignore[import-untyped]
+from rich import box              # type: ignore[import-untyped]
 
 from core.storage import Storage
 from core.youtube_fetcher import YouTubeFetcher
@@ -37,34 +37,40 @@ STATUS_COLORS = {
 
 
 def cmd_add(args):
-    console.print(f"[cyan]Fetching video info...[/cyan]")
+    console.print("[cyan]Fetching video info...[/cyan]")
     try:
-        video = fetcher.fetch_video(args.url)
+        fetched = fetcher.fetch_video(args.url)
     except Exception as e:
         console.print(f"[red]Error fetching video: {e}[/red]")
         return
 
+    # Guard: fetch_video returns Optional[Video]
+    if fetched is None:
+        console.print("[red]Could not retrieve video info. Check the URL and your YOUTUBE_API_KEY.[/red]")
+        return
+    video = fetched  # now Video, not Video | None
+
     # Extract transcript
-    console.print(f"[cyan]Extracting transcript...[/cyan]")
+    console.print("[cyan]Extracting transcript...[/cyan]")
     transcript, source = extractor.extract(video.video_id)
     if transcript:
         video.transcript_text = transcript
         video.transcript_source = source
         console.print(f"[green]✓ Transcript extracted ({source})[/green]")
     else:
-        console.print(f"[yellow]⚠ Transcript not available — you can add it manually later.[/yellow]")
+        console.print("[yellow]⚠ Transcript not available — you can add it manually later.[/yellow]")
 
     # Summarize
     if transcript:
-        console.print(f"[cyan]Generating summary...[/cyan]")
+        console.print("[cyan]Generating summary...[/cyan]")
         bullets, paragraph = summarizer.summarize(transcript, video.title)
         video.summary_bullets = bullets
         video.summary_paragraph = paragraph
-        console.print(f"[green]✓ Summary generated[/green]")
+        console.print("[green]✓ Summary generated[/green]")
 
-        console.print(f"[cyan]Generating notes...[/cyan]")
+        console.print("[cyan]Generating notes...[/cyan]")
         video.auto_notes = notes_gen.generate_auto_notes(transcript, video.title)
-        console.print(f"[green]✓ Notes generated[/green]")
+        console.print("[green]✓ Notes generated[/green]")
 
     storage.save_video(video)
     console.print(Panel(
@@ -89,7 +95,7 @@ def cmd_list(args):
             status = WatchStatus(args.status)
             videos = [v for v in videos if v.status == status]
         except ValueError:
-            console.print(f"[red]Invalid status. Use: saved, watching, completed, dropped, rewatch[/red]")
+            console.print("[red]Invalid status. Use: saved, watching, completed, dropped, rewatch[/red]")
             return
 
     table = Table(title=f"📺 YouTube Learning Tracker ({len(videos)} videos)", box=box.ROUNDED)
@@ -130,7 +136,7 @@ def cmd_view(args):
         f"[dim]URL:[/dim]      {video.url}\n"
         f"[dim]Status:[/dim]   [{color}]{video.status.value}[/{color}]\n"
         f"[dim]Transcript:[/dim] {'✓ Available' if video.transcript_text else '✗ Not available'} ({video.transcript_source})",
-        title=f"[cyan]📺 Video Details[/cyan]",
+        title="[cyan]📺 Video Details[/cyan]",
         border_style="cyan"
     ))
 
@@ -154,7 +160,7 @@ def cmd_status(args):
     try:
         new_status = WatchStatus(args.status)
     except ValueError:
-        console.print(f"[red]Invalid status. Choose from: saved, watching, completed, dropped, rewatch[/red]")
+        console.print("[red]Invalid status. Choose from: saved, watching, completed, dropped, rewatch[/red]")
         return
 
     old = video.status.value
@@ -169,7 +175,7 @@ def cmd_transcript(args):
         console.print(f"[red]Video not found: {args.video_id}[/red]")
         return
     if not video.transcript_text:
-        console.print(f"[yellow]No transcript for this video. Paste one below (Ctrl+D or Ctrl+Z to finish):[/yellow]")
+        console.print("[yellow]No transcript for this video. Paste one below (Ctrl+D or Ctrl+Z to finish):[/yellow]")
         lines = []
         try:
             while True:
@@ -216,7 +222,7 @@ def cmd_note(args):
         return
     video.manual_notes = args.text
     storage.update_video(video)
-    console.print(f"[green]✓ Note saved.[/green]")
+    console.print("[green]✓ Note saved.[/green]")
 
 
 def cmd_search(args):
@@ -250,49 +256,40 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # add
     p_add = subparsers.add_parser("add", help="Save a YouTube video")
     p_add.add_argument("url", help="YouTube video URL")
     p_add.set_defaults(func=cmd_add)
 
-    # list
     p_list = subparsers.add_parser("list", help="List saved videos")
     p_list.add_argument("--status", help="Filter by status", default=None)
     p_list.set_defaults(func=cmd_list)
 
-    # view
     p_view = subparsers.add_parser("view", help="View video details")
     p_view.add_argument("video_id", help="YouTube video ID")
     p_view.set_defaults(func=cmd_view)
 
-    # status
     p_status = subparsers.add_parser("status", help="Update watch status")
     p_status.add_argument("video_id", help="YouTube video ID")
     p_status.add_argument("status", help="New status: saved|watching|completed|dropped|rewatch")
     p_status.set_defaults(func=cmd_status)
 
-    # transcript
     p_trans = subparsers.add_parser("transcript", help="View or add transcript")
     p_trans.add_argument("video_id", help="YouTube video ID")
     p_trans.set_defaults(func=cmd_transcript)
 
-    # summary
     p_sum = subparsers.add_parser("summary", help="Generate or view summary")
     p_sum.add_argument("video_id", help="YouTube video ID")
     p_sum.set_defaults(func=cmd_summary)
 
-    # note
     p_note = subparsers.add_parser("note", help="Add a manual note")
     p_note.add_argument("video_id", help="YouTube video ID")
     p_note.add_argument("text", help="Note text")
     p_note.set_defaults(func=cmd_note)
 
-    # search
     p_search = subparsers.add_parser("search", help="Search saved videos")
     p_search.add_argument("query", help="Search query")
     p_search.set_defaults(func=cmd_search)
 
-    # stats
     p_stats = subparsers.add_parser("stats", help="Show library stats")
     p_stats.set_defaults(func=cmd_stats)
 
