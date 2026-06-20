@@ -69,11 +69,11 @@ class Video:
     auto_notes:           list[str]    = field(default_factory=list)   # fix #15: typed
     manual_notes:         str          = ""
     tags:                 list[str]    = field(default_factory=list)   # fix #15: typed
-    local_path:           str          = ""   # absolute path to downloaded file
-    # ── Watch progress ───────────────────────────────────────────
+    local_path:           str | None   = None  # absolute path to downloaded file; None = not downloaded
+    # ── Watch progress ───────────────────────────────────────────────
     watch_progress_sec:   int          = 0    # seconds watched so far
     duration_sec:         int          = 0    # total seconds (parsed from `duration`)
-    # ────────────────────────────────────────────────────
+    # ────────────────────────────────────────────────
     created_at:           str          = field(default_factory=lambda: datetime.now().isoformat())
     updated_at:           str          = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -85,6 +85,9 @@ class Video:
         self.summary_bullets = [str(b) for b in self.summary_bullets]
         self.auto_notes      = [str(n) for n in self.auto_notes]
         self.tags            = [str(t) for t in self.tags]
+        # Normalise legacy empty-string sentinel from old JSON files
+        if self.local_path == "":
+            self.local_path = None
 
     @property
     def progress_pct(self) -> float:
