@@ -1,5 +1,6 @@
 """YouTube Learning Tracker — Streamlit web app."""
 
+import re
 import streamlit as st  # type: ignore[import-untyped]
 import os
 import sys
@@ -311,6 +312,85 @@ def _render_download_tab(video: Video) -> None:
                 st.error(f"❌ Download failed:\n\n{exc}")
 
 
+# ── Feature 5: clickable timestamps in transcript ──────────────────────────
+_TIMESTAMP_RE = re.compile(
+    r"\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b"  # [H:]M:SS
+)
+
+def _ts_to_seconds(h: str | None, m: str, s: str) -> int:
+    return (int(h) if h else 0) * 3600 + int(m) * 60 + int(s)
+
+def _linkify_timestamps(text: str, video_id: str) -> str:
+    """Replace HH:MM:SS / MM:SS patterns with YouTube deep-link markdown."""
+    def _replace(match: re.Match) -> str:
+        h, m, s = match.group(1), match.group(2), match.group(3)
+        total   = _ts_to_seconds(h, m, s)
+        label   = match.group(0)
+        url     = f"https://www.youtube.com/watch?v={video_id}&t={total}s"
+        return f"[{label}]({url})"
+    return _TIMESTAMP_RE.sub(_replace, text)
+
+
+def _render_transcript_tab(video: Video) -> None:
+    """Render the Transcript tab with clickable timestamp links."""
+    vid = video.video_id
+    if video.transcript_text:
+        st.caption(f"Source: `{video.transcript_source or 'unknown'}`  ·  Timestamps are clickable YouTube deep-links 🔗")
+        # Toggle: linked view vs raw text area
+        view_mode = st.radio(
+            "View",
+            ["🔗 Clickable timestamps", "📋 Raw text"],
+            horizontal=True,
+            key=f"transcript_view_{vid}",
+            label_visibility="collapsed",
+        )
+        if view_mode == "🔗 Clickable timestamps":
+            linked = _linkify_timestamps(video.transcript_text, vid)
+            # Render in a scrollable container so it doesn't blow up the page
+            st.markdown(
+                f"""<div style="max-height:380px;overflow-y:auto;
+                    background:var(--background-color,#f8f9fa);
+                    border:1px solid #ddd;border-radius:6px;
+                    padding:12px;font-size:0.85rem;line-height:1.7;
+                    white-space:pre-wrap;word-break:break-word;">{linked}</div>""",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.text_area(
+                "transcript",
+                value=video.transcript_text,
+                height=350,
+                key=f"transcript_{vid}",
+                disabled=True,
+                label_visibility="collapsed",
+            )
+    else:
+        st.info("⚠️ No transcript yet.")
+        col_p, col_u = st.columns(2)
+        with col_p:
+            pasted = st.text_area("Paste transcript", height=200, key=f"paste_{vid}")
+            if st.button("💾 Save Pasted", key=f"save_paste_{vid}"):
+                if pasted.strip():
+                    video.transcript_text   = pasted.strip()
+                    video.transcript_source = "manual"
+                    storage.update_video(video)
+                    st.success("✅ Saved!")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Paste is empty.")
+        with col_u:
+            up = st.file_uploader("Upload .txt", type=["txt"], key=f"upload_{vid}")
+            if up is not None:
+                raw = up.read().decode("utf-8")
+                if st.button("💾 Save File", key=f"save_upload_{vid}"):
+                    if raw.strip():
+                        video.transcript_text   = raw.strip()
+                        video.transcript_source = "upload"
+                        storage.update_video(video)
+                        st.success("✅ Saved!")
+                        st.rerun()
+
+
 def _render_detail_page(video: Video) -> None:
     vid = video.video_id
 
@@ -334,7 +414,13 @@ def _render_detail_page(video: Video) -> None:
         st.caption(f"📺 {video.channel}  ·  ⏱ {video.duration}  ·  {(video.published_at or '')[:10]}")
         st.markdown(f"🔗 [Watch on YouTube]({video.url})")
         if video.tags:
-            st.caption("🏷️ " + "  ·  ".join(video.tags[:8]))
+            # Feature 3 — tag chips as badge-style links in detail header
+            tag_html = "  ".join(
+                f'<span style="background:#e8f4f8;border:1px solid #b3d7e8;border-radius:12px;'
+                f'padding:2px 9px;font-size:0.78rem;color:#1a6b8a;white-space:nowrap;">🏷️ {t}</span>'
+                for t in video.tags[:8]
+            )
+            st.markdown(tag_html, unsafe_allow_html=True)
         status_options = [s.value for s in WatchStatus]
         new_status = st.selectbox(
             "Status", options=status_options,
@@ -406,34 +492,7 @@ def _render_detail_page(video: Video) -> None:
             )
 
     with tabs[2]:
-        if video.transcript_text:
-            st.caption(f"Source: `{video.transcript_source or 'unknown'}`")
-            st.text_area("transcript", value=video.transcript_text, height=350, key=f"transcript_{vid}", disabled=True, label_visibility="collapsed")
-        else:
-            st.info("⚠️ No transcript yet.")
-            col_p, col_u = st.columns(2)
-            with col_p:
-                pasted = st.text_area("Paste transcript", height=200, key=f"paste_{vid}")
-                if st.button("💾 Save Pasted", key=f"save_paste_{vid}"):
-                    if pasted.strip():
-                        video.transcript_text   = pasted.strip()
-                        video.transcript_source = "manual"
-                        storage.update_video(video)
-                        st.success("✅ Saved!")
-                        st.rerun()
-                    else:
-                        st.warning("⚠️ Paste is empty.")
-            with col_u:
-                up = st.file_uploader("Upload .txt", type=["txt"], key=f"upload_{vid}")
-                if up is not None:
-                    raw = up.read().decode("utf-8")
-                    if st.button("💾 Save File", key=f"save_upload_{vid}"):
-                        if raw.strip():
-                            video.transcript_text   = raw.strip()
-                            video.transcript_source = "upload"
-                            storage.update_video(video)
-                            st.success("✅ Saved!")
-                            st.rerun()
+        _render_transcript_tab(video)
 
     with tabs[3]:
         if not video.transcript_text:
@@ -492,6 +551,23 @@ def _render_detail_page(video: Video) -> None:
         _render_download_tab(video)
 
 
+# ── Feature 3: tag chips on video card ─────────────────────────────────────
+def _render_tag_chips(tags: list[str], max_tags: int = 3) -> None:
+    if not tags:
+        return
+    chips = tags[:max_tags]
+    chip_html = " ".join(
+        f'<span style="background:#e8f4f8;border:1px solid #b3d7e8;border-radius:12px;'
+        f'padding:1px 8px;font-size:0.72rem;color:#1a6b8a;white-space:nowrap;">🏷️ {t}</span>'
+        for t in chips
+    )
+    if len(tags) > max_tags:
+        chip_html += (
+            f' <span style="font-size:0.72rem;color:#888;">+{len(tags) - max_tags} more</span>'
+        )
+    st.markdown(chip_html, unsafe_allow_html=True)
+
+
 def _render_video_card(video: Video) -> None:
     with st.container(border=True):
         if video.thumbnail_url:
@@ -499,6 +575,9 @@ def _render_video_card(video: Video) -> None:
         title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
         st.markdown(f"**{title_display}**")
         st.caption(f"{video.channel} · {video.duration}")
+        # Feature 3 — tag chips
+        if video.tags:
+            _render_tag_chips(video.tags)
         _render_progress_bar(video, compact=True)
         status_options = [s.value for s in WatchStatus]
         new_status = st.selectbox(
@@ -669,20 +748,50 @@ elif page == "📚 Library":
             st.stop()
     st.title("📚 Your Library")
 
-    # ── Row 1: Status filter + Sort
-    col_f, col_s = st.columns([2, 1])
-    with col_f:
-        status_filter = st.selectbox("Filter", ["All", "saved", "watching", "completed", "dropped", "rewatch"])
-    with col_s:
-        sort_by = st.selectbox("Sort", ["Recently updated", "Title A–Z", "Progress ↑", "Progress ↓"])
+    # ── Row 1: Search bar (Feature 1)
+    search_q = st.text_input(
+        "🔍 Search",
+        placeholder="Filter by title or channel…",
+        key="lib_search",
+        label_visibility="collapsed",
+    )
 
-    # ── Apply status filter first so tag options reflect visible videos
+    # ── Row 2: Status filter + Sort (Feature 4 adds Date Added option)
+    col_f, col_ch, col_s = st.columns([2, 2, 2])
+    with col_f:
+        status_filter = st.selectbox(
+            "Status",
+            ["All", "saved", "watching", "completed", "dropped", "rewatch"],
+            label_visibility="collapsed",
+        )
+    with col_s:
+        sort_by = st.selectbox(
+            "Sort",
+            ["Recently updated", "Date Added ↓", "Date Added ↑", "Title A–Z", "Progress ↑", "Progress ↓"],
+            label_visibility="collapsed",
+        )
+
+    # ── Apply status filter
     all_videos = (
         storage.get_all_videos() if status_filter == "All"
         else storage.filter_by_status(WatchStatus(status_filter))
     )
 
-    # ── Row 2: Tag chip filter (only shown when any video in the library has tags)
+    # ── Feature 2: Channel multiselect filter
+    all_channels: list[str] = sorted({v.channel for v in storage.get_all_videos() if v.channel})
+    selected_channels: list[str] = []
+    with col_ch:
+        if all_channels:
+            selected_channels = st.multiselect(
+                "Channel",
+                options=all_channels,
+                default=[],
+                placeholder="All channels",
+                key="lib_channel_filter",
+                label_visibility="collapsed",
+            )
+
+    # ── Row 3: Tag chip filter
     all_tags: list[str] = sorted(
         {tag for v in storage.get_all_videos() for tag in (v.tags or [])}
     )
@@ -696,33 +805,62 @@ elif page == "📚 Library":
             key="lib_tag_filter",
         )
 
-    # ── Apply tag filter (AND logic: video must have ALL selected tags)
+    # ── Apply inline search (Feature 1)
+    videos = all_videos
+    if search_q:
+        q_lower = search_q.lower()
+        videos = [
+            v for v in videos
+            if q_lower in v.title.lower() or q_lower in (v.channel or "").lower()
+        ]
+
+    # ── Apply channel filter (Feature 2)
+    if selected_channels:
+        videos = [v for v in videos if v.channel in selected_channels]
+
+    # ── Apply tag filter (AND logic)
     if selected_tags:
         videos = [
-            v for v in all_videos
+            v for v in videos
             if all(tag in (v.tags or []) for tag in selected_tags)
         ]
-    else:
-        videos = all_videos
 
-    # ── Sort
+    # ── Sort (Feature 4 adds Date Added)
     if sort_by == "Title A–Z":
         videos = sorted(videos, key=lambda v: v.title.lower())
     elif sort_by == "Progress ↑":
         videos = sorted(videos, key=lambda v: v.progress_pct)
     elif sort_by == "Progress ↓":
         videos = sorted(videos, key=lambda v: v.progress_pct, reverse=True)
-    else:
+    elif sort_by == "Date Added ↓":
+        videos = sorted(videos, key=lambda v: v.created_at if hasattr(v, "created_at") and v.created_at else "", reverse=True)
+    elif sort_by == "Date Added ↑":
+        videos = sorted(videos, key=lambda v: v.created_at if hasattr(v, "created_at") and v.created_at else "")
+    else:  # Recently updated
         videos = sorted(videos, key=lambda v: v.updated_at, reverse=True)
 
+    # ── Count caption
     if not videos:
+        active_filters = []
+        if search_q:
+            active_filters.append(f'"{search_q}"')
+        if selected_channels:
+            active_filters.append(f"channel: {', '.join(selected_channels)}")
         if selected_tags:
-            st.info(f"🏷️ No videos match the selected tag{'s' if len(selected_tags) > 1 else ''}: {', '.join(selected_tags)}")
+            active_filters.append(f"tags: {', '.join(selected_tags)}")
+        if active_filters:
+            st.info(f"🔍 No videos match: {' · '.join(active_filters)}")
         else:
             st.info("📦 No videos for this filter.")
     else:
-        tag_note = f"  ·  🏷️ {', '.join(selected_tags)}" if selected_tags else ""
-        st.caption(f"{len(videos)} video(s){tag_note}")
+        parts = [f"{len(videos)} video(s)"]
+        if search_q:
+            parts.append(f'🔍 "{search_q}"')
+        if selected_channels:
+            parts.append(f"📺 {', '.join(selected_channels)}")
+        if selected_tags:
+            parts.append(f"🏷️ {', '.join(selected_tags)}")
+        st.caption("  ·  ".join(parts))
         cols = st.columns(3)
         for i, video in enumerate(videos):
             with cols[i % 3]:
@@ -798,8 +936,8 @@ elif page == "📁 Collections":
                 if not not_in:
                     st.info("✅ All your saved videos are already in this collection.")
                 else:
-                    search_q = st.text_input("Filter videos", placeholder="Type to filter...", key=f"coll_add_search_{coll.id}")
-                    filtered = [v for v in not_in if search_q.lower() in v.title.lower() or search_q.lower() in v.channel.lower()] if search_q else not_in
+                    search_q2 = st.text_input("Filter videos", placeholder="Type to filter...", key=f"coll_add_search_{coll.id}")
+                    filtered = [v for v in not_in if search_q2.lower() in v.title.lower() or search_q2.lower() in v.channel.lower()] if search_q2 else not_in
                     for v in filtered[:20]:
                         a_cols = st.columns([3, 1])
                         with a_cols[0]:
