@@ -192,6 +192,45 @@ def _finish_add_video(video: Video) -> None:
     st.success("✅ Video saved! Go to 📚 Library to view it.")
 
 
+def _export_study_guide(video: Video) -> str:
+    """Compose a portable Markdown study guide for the given video."""
+    lines: list[str] = []
+    lines.append(f"# {video.title}")
+    lines.append("")
+    lines.append(f"**Channel:** {video.channel}")
+    if video.duration:
+        lines.append(f"**Duration:** {video.duration}")
+    if video.published_at:
+        lines.append(f"**Published:** {video.published_at[:10]}")
+    lines.append(f"**URL:** {video.url}")
+    if video.tags:
+        lines.append(f"**Tags:** {', '.join(video.tags)}")
+    lines.append("")
+    if video.summary_paragraph:
+        lines.append("## Summary")
+        lines.append("")
+        lines.append(video.summary_paragraph)
+        lines.append("")
+    if video.summary_bullets:
+        lines.append("## Key Takeaways")
+        lines.append("")
+        for b in video.summary_bullets:
+            lines.append(f"- {b}")
+        lines.append("")
+    if video.auto_notes:
+        lines.append("## Auto Notes")
+        lines.append("")
+        for n in video.auto_notes:
+            lines.append(f"- {n}")
+        lines.append("")
+    if video.manual_notes and video.manual_notes.strip():
+        lines.append("## My Notes")
+        lines.append("")
+        lines.append(video.manual_notes.strip())
+        lines.append("")
+    return "\n".join(lines)
+
+
 def _render_download_tab(video: Video) -> None:
     vid     = video.video_id
     has_ff  = downloader.has_ffmpeg()
@@ -233,6 +272,11 @@ def _render_download_tab(video: Video) -> None:
         st.download_button(label="📥 Save to computer", data=file_bytes, file_name=fname, mime=mime, key=f"dl_save_{vid}")
         st.divider()
         st.caption("Re-download in a different format ↓")
+    elif video.local_path and not Path(video.local_path).exists():
+        # fix: phantom pointer — file was deleted externally; clear it so the UI
+        # doesn't keep showing a broken path on every subsequent render.
+        video.local_path = None
+        storage.update_video(video)
     dl_key = f"dl_running_{vid}"
     if dl_key not in st.session_state:
         st.session_state[dl_key] = False
@@ -258,8 +302,12 @@ def _render_download_tab(video: Video) -> None:
                 mime  = "audio/mpeg" if fname.endswith(".mp3") else ("audio/mp4" if fname.endswith(".m4a") else "video/mp4")
                 st.download_button(label="📥 Save to computer", data=file_bytes, file_name=fname, mime=mime, key=f"dl_save_new_{vid}")
             except RuntimeError as exc:
-                # fix: always reset dl_key on failure so the button is usable again
                 st.session_state[dl_key] = False
+                # fix: clear phantom local_path pointer so videos.json stays clean
+                # after a failed download (e.g. yt-dlp verification error).
+                if video.local_path:
+                    video.local_path = None
+                    storage.update_video(video)
                 st.error(f"❌ Download failed:\n\n{exc}")
 
 
@@ -285,6 +333,8 @@ def _render_detail_page(video: Video) -> None:
         st.title(video.title)
         st.caption(f"📺 {video.channel}  ·  ⏱ {video.duration}  ·  {(video.published_at or '')[:10]}")
         st.markdown(f"🔗 [Watch on YouTube]({video.url})")
+        if video.tags:
+            st.caption("🏷️ " + "  ·  ".join(video.tags[:8]))
         status_options = [s.value for s in WatchStatus]
         new_status = st.selectbox(
             "Status", options=status_options,
@@ -336,6 +386,24 @@ def _render_detail_page(video: Video) -> None:
             video.manual_notes = new_notes
             storage.update_video(video)
             st.success("✅ Notes saved.")
+        # Export Study Guide — available whenever there is at least a summary or notes
+        has_content = any([
+            video.summary_paragraph,
+            video.summary_bullets,
+            video.auto_notes,
+            video.manual_notes and video.manual_notes.strip(),
+        ])
+        if has_content:
+            st.divider()
+            guide_md = _export_study_guide(video)
+            st.download_button(
+                label="📥 Export Study Guide (.md)",
+                data=guide_md,
+                file_name=f"{video.video_id}_study_guide.md",
+                mime="text/markdown",
+                key=f"export_guide_{vid}",
+                help="Downloads a Markdown file with summary, bullets, auto-notes and your notes.",
+            )
 
     with tabs[2]:
         if video.transcript_text:
@@ -554,6 +622,8 @@ elif page == "➕ Add Video":
             st.markdown(f"**Channel:** {video.channel}")
             st.markdown(f"**Duration:** {video.duration}")
             st.markdown(f"**Published:** {(video.published_at or '')[:10]}")
+            if video.tags:
+                st.markdown(f"**Tags:** {', '.join(video.tags[:6])}")
         if not video.transcript_text:
             with st.spinner("📄 Extracting transcript via yt-dlp..."):
                 transcript, source = extractor.extract(video.video_id)
