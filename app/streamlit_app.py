@@ -668,15 +668,44 @@ elif page == "📚 Library":
             _render_detail_page(v)
             st.stop()
     st.title("📚 Your Library")
+
+    # ── Row 1: Status filter + Sort
     col_f, col_s = st.columns([2, 1])
     with col_f:
         status_filter = st.selectbox("Filter", ["All", "saved", "watching", "completed", "dropped", "rewatch"])
     with col_s:
         sort_by = st.selectbox("Sort", ["Recently updated", "Title A–Z", "Progress ↑", "Progress ↓"])
-    videos = (
+
+    # ── Apply status filter first so tag options reflect visible videos
+    all_videos = (
         storage.get_all_videos() if status_filter == "All"
         else storage.filter_by_status(WatchStatus(status_filter))
     )
+
+    # ── Row 2: Tag chip filter (only shown when any video in the library has tags)
+    all_tags: list[str] = sorted(
+        {tag for v in storage.get_all_videos() for tag in (v.tags or [])}
+    )
+    selected_tags: list[str] = []
+    if all_tags:
+        selected_tags = st.multiselect(
+            "🏷️ Filter by tag",
+            options=all_tags,
+            default=[],
+            placeholder="Pick one or more tags…",
+            key="lib_tag_filter",
+        )
+
+    # ── Apply tag filter (AND logic: video must have ALL selected tags)
+    if selected_tags:
+        videos = [
+            v for v in all_videos
+            if all(tag in (v.tags or []) for tag in selected_tags)
+        ]
+    else:
+        videos = all_videos
+
+    # ── Sort
     if sort_by == "Title A–Z":
         videos = sorted(videos, key=lambda v: v.title.lower())
     elif sort_by == "Progress ↑":
@@ -685,10 +714,15 @@ elif page == "📚 Library":
         videos = sorted(videos, key=lambda v: v.progress_pct, reverse=True)
     else:
         videos = sorted(videos, key=lambda v: v.updated_at, reverse=True)
+
     if not videos:
-        st.info("📦 No videos for this filter.")
+        if selected_tags:
+            st.info(f"🏷️ No videos match the selected tag{'s' if len(selected_tags) > 1 else ''}: {', '.join(selected_tags)}")
+        else:
+            st.info("📦 No videos for this filter.")
     else:
-        st.caption(f"{len(videos)} video(s)")
+        tag_note = f"  ·  🏷️ {', '.join(selected_tags)}" if selected_tags else ""
+        st.caption(f"{len(videos)} video(s){tag_note}")
         cols = st.columns(3)
         for i, video in enumerate(videos):
             with cols[i % 3]:
