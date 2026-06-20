@@ -5,6 +5,7 @@ import streamlit as st  # type: ignore[import-untyped]
 import os
 import sys
 import subprocess
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 
@@ -14,6 +15,7 @@ sys.path.insert(0, str(root))
 load_dotenv(root / ".env")
 
 from core.storage import Storage
+from core.settings_store import SettingsStore
 from core.youtube_fetcher import YouTubeFetcher
 from core.transcript_extractor import TranscriptExtractor
 from core.summarizer import Summarizer
@@ -32,7 +34,9 @@ st.set_page_config(
 
 # ─── Init services
 storage_path = os.getenv("STORAGE_PATH", str(root / "data" / "videos.json"))
+settings_path = str(root / "data" / "settings.json")
 storage    = Storage(storage_path)
+settings   = SettingsStore(settings_path)
 fetcher    = YouTubeFetcher()
 extractor  = TranscriptExtractor()
 summarizer = Summarizer()
@@ -77,6 +81,73 @@ def _fmt_seconds(sec: int) -> str:
     if h:
         return f"{h}:{m:02d}:{s:02d}"
     return f"{m}:{s:02d}"
+
+
+def _current_week_bounds() -> tuple[datetime, datetime]:
+    """Return (monday_00:00, sunday_23:59:59) for the current ISO week in UTC."""
+    now   = datetime.now(timezone.utc)
+    monday = now - timedelta(days=now.weekday())
+    week_start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end   = week_start + timedelta(days=7) - timedelta(seconds=1)
+    return week_start, week_end
+
+
+def _week_watched_hours(videos: list[Video]) -> float:
+    """Sum watch_progress_sec for videos updated this ISO week, in hours."""
+    week_start, week_end = _current_week_bounds()
+    total_sec = 0
+    for v in videos:
+        if not v.updated_at:
+            continue
+        try:
+            # updated_at is stored as ISO string; may or may not have tz info
+            updated = datetime.fromisoformat(v.updated_at)
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            if week_start <= updated <= week_end:
+                total_sec += v.watch_progress_sec
+        except (ValueError, AttributeError):
+            continue
+    return total_sec / 3600
+
+
+def _render_weekly_goal(videos: list[Video]) -> None:
+    """Render the weekly watch goal progress widget on the Dashboard."""
+    goal_hours = settings.weekly_goal_hours
+    watched_hours = _week_watched_hours(videos)
+
+    week_start, _ = _current_week_bounds()
+    week_label = week_start.strftime("Week of %b %d")
+
+    if goal_hours <= 0:
+        # No goal set — show a soft nudge with the raw watched hours
+        st.info(
+            f"🎯 **Weekly Watch Goal** — not set yet.  "
+            f"You've watched **{watched_hours:.1f}h** this week.  "
+            f"Set a goal in ⚙️ Settings."
+        )
+        return
+
+    pct        = min(watched_hours / goal_hours, 1.0)
+    remaining  = max(goal_hours - watched_hours, 0)
+    goal_met   = watched_hours >= goal_hours
+
+    st.markdown(f"**🎯 Weekly Watch Goal — {week_label}**")
+    g_col1, g_col2, g_col3 = st.columns([4, 1, 1])
+    with g_col1:
+        bar_text = (
+            f"✅ Goal met! {watched_hours:.1f}h / {goal_hours:.1f}h"
+            if goal_met
+            else f"⏱ {watched_hours:.1f}h watched · {remaining:.1f}h to go · target {goal_hours:.1f}h"
+        )
+        st.progress(pct, text=bar_text)
+    with g_col2:
+        st.metric("⏱ Watched", f"{watched_hours:.1f}h")
+    with g_col3:
+        st.metric("🎯 Goal", f"{goal_hours:.1f}h")
+
+    if goal_met:
+        st.success("🏆 You hit your weekly goal — great work!")
 
 
 def _render_progress_bar(video: Video, compact: bool = False) -> None:
@@ -746,6 +817,15 @@ with st.sidebar:
     n_colls = len(storage.get_all_collections())
     if n_colls:
         st.caption(f"📁 {n_colls} collection{'s' if n_colls != 1 else ''}")
+    # ── weekly goal mini-indicator in sidebar
+    goal_hours = settings.weekly_goal_hours
+    if goal_hours > 0:
+        all_vids_sidebar = storage.get_all_videos()
+        wh = _week_watched_hours(all_vids_sidebar)
+        pct_sidebar = min(wh / goal_hours, 1.0)
+        st.divider()
+        st.caption(f"🎯 Goal: {wh:.1f}h / {goal_hours:.1f}h this week")
+        st.progress(pct_sidebar)
 
 
 # ── Dashboard
@@ -786,6 +866,10 @@ if page == "📊 Dashboard":
             with prog_cols[2]:
                 h2, rem2 = divmod(total_sec, 3600)
                 st.metric("📽️ Total", f"{h2}h {rem2//60}m")
+
+        # ── Weekly Watch Goal
+        st.divider()
+        _render_weekly_goal(all_vids)
 
         # ── v0.9.0: Insight charts
         st.divider()
@@ -1200,6 +1284,33 @@ elif page == "⚙️ Settings":
             "⚠️ FFmpeg not detected. Download feature works in limited mode.\n"
             "Install: `winget install --id Gyan.FFmpeg -e` then restart the app."
         )
+
+    # ── Weekly Watch Goal
+    st.divider()
+    st.subheader("🎯 Weekly Watch Goal")
+    st.caption("Set how many hours you want to watch each week. The Dashboard tracks your progress.")
+    current_goal = settings.weekly_goal_hours
+    new_goal = st.number_input(
+        "Hours per week",
+        min_value=0.0,
+        max_value=168.0,
+        value=float(current_goal),
+        step=0.5,
+        format="%.1f",
+        key="settings_weekly_goal",
+        help="Set to 0 to disable the goal widget.",
+    )
+    if st.button("💾 Save Goal", key="save_weekly_goal", type="primary"):
+        settings.weekly_goal_hours = new_goal
+        if new_goal > 0:
+            st.success(f"✅ Weekly goal set to **{new_goal:.1f}h**. Check the Dashboard to track progress.")
+        else:
+            st.info("Weekly goal cleared.")
+        st.rerun()
+    if current_goal > 0:
+        all_vids_s = storage.get_all_videos()
+        wh_s = _week_watched_hours(all_vids_s)
+        st.caption(f"This week so far: **{wh_s:.1f}h** / {current_goal:.1f}h goal")
 
     st.divider()
     st.subheader("🔄 Update yt-dlp")
