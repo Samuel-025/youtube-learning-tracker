@@ -1,5 +1,6 @@
 """Video data model for YouTube Learning Tracker."""
 
+import dataclasses
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from datetime import datetime
@@ -70,7 +71,7 @@ class Video:
     manual_notes:         str          = ""
     tags:                 list[str]    = field(default_factory=list)   # fix #15: typed
     local_path:           str | None   = None  # absolute path to downloaded file; None = not downloaded
-    # ── Watch progress ───────────────────────────────────────────────
+    # ── Watch progress ─────────────────────────────────────────────────────────
     watch_progress_sec:   int          = 0    # seconds watched so far
     duration_sec:         int          = 0    # total seconds (parsed from `duration`)
     # ────────────────────────────────────────────────
@@ -79,8 +80,15 @@ class Video:
 
     def __post_init__(self):
         """Auto-populate duration_sec from the human-readable duration string."""
-        if self.duration_sec == 0 and self.duration:
-            self.duration_sec = _parse_duration_sec(self.duration)
+        # fix B4: always reparse when the duration string is non-empty so that
+        # a re-fetch that corrects the duration string is reflected immediately.
+        if self.duration:
+            parsed = _parse_duration_sec(self.duration)
+            # Only overwrite if we got a valid parse (>0) OR duration_sec is
+            # still at its zero default (don't clobber a manually-set value
+            # with a failed parse).
+            if parsed > 0 or self.duration_sec == 0:
+                self.duration_sec = parsed
         # fix #15: coerce any non-str items that crept in via JSON into str
         self.summary_bullets = [str(b) for b in self.summary_bullets]
         self.auto_notes      = [str(n) for n in self.auto_notes]
@@ -106,15 +114,12 @@ class Video:
         """
         Safe loader: tolerates extra/missing keys as the schema evolves.
         Unknown keys are silently dropped; missing keys fall back to defaults.
+
+        fix B11: derive the allowed-field set from the dataclass definition
+        itself so new fields added to Video are automatically accepted without
+        needing a manual update to a hardcoded whitelist.
         """
-        known = {
-            "video_id", "url", "title", "channel", "thumbnail_url",
-            "published_at", "duration", "status", "transcript_text",
-            "transcript_source", "summary_bullets", "summary_paragraph",
-            "auto_notes", "manual_notes", "tags", "local_path",
-            "watch_progress_sec", "duration_sec",
-            "created_at", "updated_at",
-        }
+        known = {f.name for f in dataclasses.fields(cls)}  # fix B11
         clean = {k: v for k, v in data.items() if k in known}
         raw_status = clean.get("status", "saved")
         try:
