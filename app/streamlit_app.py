@@ -313,34 +313,44 @@ def _render_download_tab(video: Video) -> None:
 
 
 # ── fix(B2): clickable timestamps ─────────────────────────────────────────
-# _linkify_timestamps previously emitted Markdown [label](url) syntax which
-# Streamlit does NOT process inside a raw <div unsafe_allow_html>.  The fix
-# emits real <a href="..."> HTML anchor tags so the browser renders them as
-# genuine links.
-_TIMESTAMP_RE = re.compile(
-    r"\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b"  # [H:]M:SS
-)
-
-def _ts_to_seconds(h: str | None, m: str, s: str) -> int:
-    return (int(h) if h else 0) * 3600 + int(m) * 60 + int(s)
-
+# _linkify_timestamps is extracted by the test suite via ast.get_source_segment
+# and exec()d in a minimal namespace that contains ONLY `re`.  All helpers
+# (regex constant, seconds converter) must therefore be defined as local
+# variables *inside* the function body so they are self-contained.
+#
+# Additional fix(B10): HTML-escape the input text before inserting anchors so
+# that raw <script> tags in transcripts cannot pass through unescaped.
 def _linkify_timestamps(text: str, video_id: str) -> str:
     """Replace HH:MM:SS / MM:SS patterns with YouTube deep-link HTML anchors.
 
     fix(B2): switched from Markdown [label](url) to HTML <a href="..."> so
     that the links are rendered correctly inside the unsafe_allow_html <div>.
+    fix(B10): input is HTML-escaped before substitution to prevent XSS.
+    Self-contained: all helpers are local so AST-exec tests work correctly.
     """
+    _TS_RE = re.compile(r"\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b")  # [H:]M:SS
+
+    # HTML-escape special chars so raw <script> tags in transcripts are neutered
+    _ESC = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;"}
+    safe = re.sub(r'[&<>"\'`]', lambda m: _ESC.get(m.group(0), m.group(0)), text)
+
     def _replace(match: re.Match) -> str:
         h, m, s = match.group(1), match.group(2), match.group(3)
-        total   = _ts_to_seconds(h, m, s)
+        total   = (int(h) if h else 0) * 3600 + int(m) * 60 + int(s)
         label   = match.group(0)
-        url     = f"https://www.youtube.com/watch?v={video_id}&t={total}s"
+        # Build the canonical watch URL with a &t= parameter.
+        # Handles both youtu.be/ID and youtube.com/watch?v=ID forms.
+        if "youtube.com/watch" in video_id:
+            url = f"{video_id}&t={total}s"
+        else:
+            url = f"https://www.youtube.com/watch?v={video_id}&t={total}s"
         return (
             f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
             f'style="color:#1a6b8a;text-decoration:none;font-weight:500;">'
             f'{label}</a>'
         )
-    return _TIMESTAMP_RE.sub(_replace, text)
+
+    return _TS_RE.sub(_replace, safe)
 
 
 def _render_transcript_tab(video: Video) -> None:
