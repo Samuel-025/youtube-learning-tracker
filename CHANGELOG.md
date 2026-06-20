@@ -8,6 +8,50 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
+## [v0.7.1] — 2026-06-20
+
+### Fixed
+- **`importlib.metadata`** used to read yt-dlp version — resolves Pylance `reportAttributeAccessIssue` on `_ytdlp.version.__version__`
+- **Streamlit API** — replaced all 14 deprecated `use_container_width=True` calls with `width='stretch'` (removed after 2025-12-31)
+- **Downloader — 4 bugs patched**
+  - `_ffprobe_path()` now uses `shutil.which` with parent-dir priority (no silent PATH fallback)
+  - Progress hook filters by file extension so intermediate `.f398.mp4` / `.f140.m4a` paths are never stored as `final_filepath`
+  - Switched `quiet=False` + `verbose=False` so JS-challenge warnings are captured in `last_warnings` instead of being swallowed
+  - Added `extractor_args youtube.player_client=['web','android']` to bypass Deno/EJS challenge solver on most videos
+- **11-bug omnibus patch**
+  - `st.image` / `st.button` API consistency across all call sites
+  - `storage=` passed to `fetcher.fetch_video()` to skip redundant API calls for already-saved videos
+  - `st.stop()` added after `_finish_add_video()` to prevent double-render
+  - Download key reset on error so the Start Download button is not stuck
+  - "Clear All Data" now wipes videos + all collection refs atomically (no orphans)
+  - `search_videos` now searches `summary_bullets` and `auto_notes` fields
+  - Downloader surfaces JS challenge warnings via `st.warning` in the UI
+  - `ffmpeg_location` passed to transcript yt-dlp opts on Windows
+  - `requirements.txt` yt-dlp floor bumped to `>=2024.11.0`
+  - Collections detail view Remove button uses `use_container_width=True`
+- **15-bug audit resolve**
+  - Storage: atomic writes via `os.replace()` + `threading.Lock`
+  - Downloader: `_resolve_output` no longer returns deleted post-processed file
+  - Collection: full UUID4 instead of 8-char truncation
+  - Streamlit: guard `st.stop()` usage, stream-safe download info
+  - YouTubeFetcher: handle live/premiere zero-duration + quota 403 message
+  - TranscriptExtractor: deduplicate `lang_codes`, fix fallback gap
+  - Summarizer: `_parse_response` paragraph contamination guard
+  - Storage: batch collection writes in `delete_video` (single read/write)
+  - Core: log model fallback events
+  - YouTubeFetcher: check storage cache before API call
+  - TranscriptExtractor: `ignore_cleanup_errors` on `TemporaryDirectory`
+  - Storage: log corrupt records instead of silently dropping
+  - Streamlit: warn if yt-dlp update Python env mismatch
+  - Models: typed `list[str]` fields on `Video`
+- **View-details lag** — route to detail page before rendering card grid on Library / Search / Collections (eliminates freeze)
+- **0% progress bar** — show grey bar for saved/unwatched videos in compact mode instead of nothing
+- **Stale selectbox** — clear `session_state` before render so `index` is respected after status auto-transition
+- **Detail page status overwrite** — re-fetch video from storage in `_render_detail_page` to prevent selectbox overwriting progress-saved status on rerun
+- **SyntaxError** — curly quotes in f-strings on lines 717 + 738 replaced with straight quotes
+
+---
+
 ## [v0.7.0] — 2026-06-19
 
 ### Added
