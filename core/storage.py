@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import threading
+from datetime import datetime          # fix B13: moved to module-level
 from typing import Optional
 from models.video import Video, WatchStatus
 from models.collection import Collection
@@ -80,25 +81,29 @@ class Storage:
             self._write(data)
 
     def get_video(self, video_id: str) -> Optional[Video]:
+        # fix B3: snapshot the raw dict inside the lock so no concurrent write
+        # can mutate it between read and Video.from_dict() parse.
         with _STORAGE_LOCK:
             data = self._read()
-        if video_id not in data:
+            raw = data.get(video_id)
+        if raw is None:
             return None
         try:
-            return Video.from_dict(data[video_id])
+            return Video.from_dict(raw)
         except Exception as exc:
-            logger.warning("Skipped corrupt video record %s: %s", video_id, exc)  # fix #13
+            logger.warning("Skipped corrupt video record %s: %s", video_id, exc)
             return None
 
     def get_all_videos(self) -> list[Video]:
+        # fix B3: snapshot raw items inside the lock, parse outside.
         with _STORAGE_LOCK:
-            data = self._read()
+            raw_items = list(self._read().items())
         videos: list[Video] = []
-        for vid_id, v in data.items():
+        for vid_id, v in raw_items:
             try:
                 videos.append(Video.from_dict(v))
             except Exception as exc:
-                logger.warning("Skipped corrupt video record %s: %s", vid_id, exc)  # fix #13
+                logger.warning("Skipped corrupt video record %s: %s", vid_id, exc)
         return videos
 
     def delete_video(self, video_id: str) -> bool:
@@ -147,23 +152,24 @@ class Storage:
     def get_collection(self, coll_id: str) -> Optional[Collection]:
         with _STORAGE_LOCK:
             data = self._read_collections()
-        if coll_id not in data:
+            raw = data.get(coll_id)
+        if raw is None:
             return None
         try:
-            return Collection.from_dict(data[coll_id])
+            return Collection.from_dict(raw)
         except Exception as exc:
-            logger.warning("Skipped corrupt collection record %s: %s", coll_id, exc)  # fix #13
+            logger.warning("Skipped corrupt collection record %s: %s", coll_id, exc)
             return None
 
     def get_all_collections(self) -> list[Collection]:
         with _STORAGE_LOCK:
-            data = self._read_collections()
+            raw_items = list(self._read_collections().items())
         colls: list[Collection] = []
-        for coll_id, c in data.items():
+        for coll_id, c in raw_items:
             try:
                 colls.append(Collection.from_dict(c))
             except Exception as exc:
-                logger.warning("Skipped corrupt collection record %s: %s", coll_id, exc)  # fix #13
+                logger.warning("Skipped corrupt collection record %s: %s", coll_id, exc)
         return sorted(colls, key=lambda c: c.created_at)
 
     def update_collection(self, coll: Collection) -> None:
@@ -187,8 +193,7 @@ class Storage:
             ids = data[coll_id].setdefault("video_ids", [])
             if video_id not in ids:
                 ids.append(video_id)
-                from datetime import datetime
-                data[coll_id]["updated_at"] = datetime.now().isoformat()
+                data[coll_id]["updated_at"] = datetime.now().isoformat()  # fix B13
             self._write_collections(data)
         return True
 
@@ -201,21 +206,17 @@ class Storage:
             if video_id not in ids:
                 return False
             ids.remove(video_id)
-            from datetime import datetime
-            data[coll_id]["updated_at"] = datetime.now().isoformat()
+            data[coll_id]["updated_at"] = datetime.now().isoformat()  # fix B13
             self._write_collections(data)
         return True
 
     def get_videos_in_collection(self, coll_id: str) -> list[Video]:
+        # fix B8: single get_all_videos() call instead of N+1 get_video() calls
         coll = self.get_collection(coll_id)
         if not coll:
             return []
-        videos = []
-        for vid_id in coll.video_ids:
-            v = self.get_video(vid_id)
-            if v:
-                videos.append(v)
-        return videos
+        all_videos = {v.video_id: v for v in self.get_all_videos()}
+        return [all_videos[vid_id] for vid_id in coll.video_ids if vid_id in all_videos]
 
     def get_collections_for_video(self, video_id: str) -> list[Collection]:
         """Return all collections that contain a given video."""
