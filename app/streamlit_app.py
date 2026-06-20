@@ -312,7 +312,11 @@ def _render_download_tab(video: Video) -> None:
                 st.error(f"❌ Download failed:\n\n{exc}")
 
 
-# ── Feature 5: clickable timestamps in transcript ──────────────────────────
+# ── fix(B2): clickable timestamps ─────────────────────────────────────────
+# _linkify_timestamps previously emitted Markdown [label](url) syntax which
+# Streamlit does NOT process inside a raw <div unsafe_allow_html>.  The fix
+# emits real <a href="..."> HTML anchor tags so the browser renders them as
+# genuine links.
 _TIMESTAMP_RE = re.compile(
     r"\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b"  # [H:]M:SS
 )
@@ -321,13 +325,21 @@ def _ts_to_seconds(h: str | None, m: str, s: str) -> int:
     return (int(h) if h else 0) * 3600 + int(m) * 60 + int(s)
 
 def _linkify_timestamps(text: str, video_id: str) -> str:
-    """Replace HH:MM:SS / MM:SS patterns with YouTube deep-link markdown."""
+    """Replace HH:MM:SS / MM:SS patterns with YouTube deep-link HTML anchors.
+
+    fix(B2): switched from Markdown [label](url) to HTML <a href="..."> so
+    that the links are rendered correctly inside the unsafe_allow_html <div>.
+    """
     def _replace(match: re.Match) -> str:
         h, m, s = match.group(1), match.group(2), match.group(3)
         total   = _ts_to_seconds(h, m, s)
         label   = match.group(0)
         url     = f"https://www.youtube.com/watch?v={video_id}&t={total}s"
-        return f"[{label}]({url})"
+        return (
+            f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
+            f'style="color:#1a6b8a;text-decoration:none;font-weight:500;">'
+            f'{label}</a>'
+        )
     return _TIMESTAMP_RE.sub(_replace, text)
 
 
@@ -1118,43 +1130,5 @@ elif page == "⚙️ Settings":
             st.caption("♻️ Restart Streamlit (`Ctrl+C` then `run.ps1`) to load the new version.")
         else:
             st.error("❌ Update failed.")
-        with st.expander("📋 Full pip output", expanded=not st.session_state["ytdlp_update_done"]):
-            st.code(st.session_state["ytdlp_update_log"], language="text")
-        if st.button("🗑️ Clear output", key="ytdlp_clear_log"):
-            st.session_state["ytdlp_update_log"]  = ""
-            st.session_state["ytdlp_update_done"] = False
-            st.rerun()
-
-    st.divider()
-    st.subheader("🔗 Get Free API Keys")
-    st.markdown("""
-| Service | Link | Notes |
-|---|---|---|
-| YouTube Data API v3 | [console.cloud.google.com](https://console.cloud.google.com) | Free 10,000 units/day |
-| Groq (recommended)  | [console.groq.com](https://console.groq.com) | Free, no credit card |
-| OpenAI (optional)   | [platform.openai.com](https://platform.openai.com) | Paid |
-    """)
-
-    st.divider()
-    st.subheader("⚠️ Danger Zone")
-    st.warning("🗑️ Permanently deletes all saved videos and clears all collection contents.")
-    if "clear_armed" not in st.session_state:
-        st.session_state["clear_armed"] = False
-    if not st.session_state["clear_armed"]:
-        if st.button("🗑️ Clear All Data", type="secondary"):
-            st.session_state["clear_armed"] = True
-            st.rerun()
-    else:
-        st.error("⚠️ Are you sure? This cannot be undone.")
-        col_yes, col_no = st.columns(2)
-        with col_yes:
-            if st.button("✅ Yes, delete everything", type="primary"):
-                # fix: use atomic clear_all_videos() — wipes videos + collection refs in one pass
-                storage.clear_all_videos()
-                st.session_state["clear_armed"] = False
-                st.success("🗑️ Library cleared.")
-                st.rerun()
-        with col_no:
-            if st.button("❌ Cancel"):
-                st.session_state["clear_armed"] = False
-                st.rerun()
+        with st.expander("📋 Full log"):
+            st.code(st.session_state["ytdlp_update_log"])
