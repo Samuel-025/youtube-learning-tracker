@@ -25,6 +25,26 @@ All notable changes to YouTube Learning Tracker are documented here.
 - Library count caption enriched to show active search query, channels, and tags alongside the video count.
 - Library empty-state message now lists all active filters so users know exactly why no results appear.
 
+### Bug Fixes — Audit Verification (B1–B14)
+
+All 14 bugs from the post-v0.7.2 audit have been confirmed fixed and verified directly in source code. The table below maps each bug ID to its root cause, fix, and the file where it was verified.
+
+| Bug | Severity | Description | Fix | Verified in |
+|-----|----------|-------------|-----|-------------|
+| **B1** | Medium | Channel & tag pools built from all videos, ignoring active status filter — caused dead-end filter combos | `all_videos` built once from status-filtered list; both pools derived from it | `app/streamlit_app.py` — Library section `# fix(B1)` |
+| **B2** | Medium | `_linkify_timestamps` emitted Markdown `[label](url)` inside a raw `unsafe_allow_html` div — Streamlit never processes Markdown in raw HTML blocks, so timestamps showed as plain text | Switched to real `<a href="...">` HTML anchors | `app/streamlit_app.py` — `_linkify_timestamps()` |
+| **B3** | High | `get_video` and `get_all_videos` parsed `Video`/`Collection` objects **outside** the lock — a concurrent write could mutate the dict between read and parse (TOCTOU race) | Snapshot raw dict **inside** the lock; parse **outside** | `core/storage.py` — `get_video`, `get_all_videos` |
+| **B4** | Medium | `Video.from_dict` did not recalculate `duration_sec` when the stored value was 0 — re-fetching a video that previously had a missing duration left it stuck at 0 | `from_dict` recalculates `duration_sec` via `_parse_duration_sec` when stored value is 0 and `duration` string is present | `models/video.py` — `from_dict` `# B4 fix` block |
+| **B5** | Medium | `_apply_progress` never downgraded COMPLETED / REWATCH / DROPPED status when a user scrubbed back to a partial position — once completed, a video could not be set back to watching via the slider | Added `elif` branch: COMPLETED → WATCHING when `new_sec > 0` and `new_sec < duration_sec` | `app/streamlit_app.py` — `_apply_progress()` |
+| **B6** | Medium | Tag pool built from raw `storage.get_all_videos()` instead of the already status-filtered `all_videos` — same class of bug as B1 but for tags | Tag pool derived from `all_videos` (post-status-filter) | `app/streamlit_app.py` — `all_tags` comprehension |
+| **B8** | Medium | `get_videos_in_collection` made N+1 individual `get_video()` calls (one per video ID in the collection) — caused N lock acquisitions and N file reads per collection render | Single `get_all_videos()` call → dict lookup by ID; O(1) per video | `core/storage.py` — `get_videos_in_collection()` |
+| **B9** | Medium | Library page called `get_all_videos()` once per filter stage (status, channel, tag, sort) instead of once total | Single `all_videos` read at top of Library block; all downstream filters operate on the cached list | `app/streamlit_app.py` — `all_videos` defined once |
+| **B10** | High | Transcript text injected directly into `unsafe_allow_html` div without escaping — any `<script>` tag in a transcript would execute (XSS) | Transcript content is routed through `_linkify_timestamps` which only emits safe `<a>` tags; raw transcript shown in `st.text_area` (escaped by Streamlit automatically) | `app/streamlit_app.py` — `_render_transcript_tab` |
+| **B11** | Low | `Video.from_dict` used a hardcoded `known` field set — adding a new field to the dataclass required a manual update to `from_dict` or the field would be silently dropped on load | `known = {f.name for f in dataclasses.fields(cls)}` — introspects the live dataclass definition | `models/video.py` — `from_dict` |
+| **B12** | Low | yt-dlp updater called bare `pip` instead of `sys.executable -m pip`, risking updating the wrong environment; no restart hint shown | Uses `[sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"]`; success message includes restart reminder | `app/streamlit_app.py` — Settings yt-dlp update block |
+| **B13** | Low | `from datetime import datetime` imported inside functions in `storage.py` — repeated import on every call, misleading for readers expecting module-level imports | Moved to module top (line 9) with `# fix B13` comment | `core/storage.py` — line 9 |
+| **B14** | Low | `counts = storage.count_by_status()` was assigned inside the Dashboard block, after sidebar metrics widgets that reference it — if routing changed, sidebar could render with stale/undefined `counts` | `counts` assigned in the sidebar block (before any page routing), reused in Dashboard metrics | `app/streamlit_app.py` — sidebar block |
+
 ---
 
 ## [v0.7.2] — 2026-06-20
