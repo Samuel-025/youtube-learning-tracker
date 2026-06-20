@@ -659,7 +659,7 @@ def _render_dashboard_charts(videos: list[Video]) -> None:
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
         )
-        st.plotly_chart(fig1, use_container_width=True)
+        st.plotly_chart(fig1, width="stretch")
 
     # ── Chart 2: Watch time by status (horizontal bar)
     with chart_col2:
@@ -687,9 +687,9 @@ def _render_dashboard_charts(videos: list[Video]) -> None:
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
             )
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width="stretch")
 
-    # ── Chart 3: Progress heatmap — stacked bar per band
+    # ── Chart 3: Progress distribution — stacked bar per band
     with chart_col3:
         st.markdown("**📊 Progress Distribution**")
         active = [s for s in all_statuses if any(band_counts[s])]
@@ -715,7 +715,7 @@ def _render_dashboard_charts(videos: list[Video]) -> None:
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
             )
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(fig3, width="stretch")
 
 
 # ╔══════════════════════════════════════════════════════
