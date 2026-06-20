@@ -47,6 +47,15 @@ STATUS_COLORS = {
     "rewatch":   "🟣",
 }
 
+# Plotly palette matched to STATUS_COLORS emoji hues
+_STATUS_HEX = {
+    "saved":     "#4C9BE8",
+    "watching":  "#F5C518",
+    "completed": "#2ECC71",
+    "dropped":   "#E74C3C",
+    "rewatch":   "#9B59B6",
+}
+
 DOWNLOAD_MODES = {
     "🎧 Audio only (MP3 192k)": "audio",
     "📹 Video 720p (MP4)": "video_720",
@@ -274,8 +283,6 @@ def _render_download_tab(video: Video) -> None:
         st.divider()
         st.caption("Re-download in a different format ↓")
     elif video.local_path and not Path(video.local_path).exists():
-        # fix: phantom pointer — file was deleted externally; clear it so the UI
-        # doesn't keep showing a broken path on every subsequent render.
         video.local_path = None
         storage.update_video(video)
     dl_key = f"dl_running_{vid}"
@@ -292,7 +299,6 @@ def _render_download_tab(video: Video) -> None:
                 storage.update_video(video)
                 st.session_state[dl_key] = False
                 st.success(f"✅ Downloaded: `{out_path.name}`")
-                # Surface any JS-challenge / signature warnings from yt-dlp
                 if downloader.last_warnings:
                     with st.expander("⚠️ yt-dlp warnings", expanded=False):
                         for w in downloader.last_warnings:
@@ -304,8 +310,6 @@ def _render_download_tab(video: Video) -> None:
                 st.download_button(label="📥 Save to computer", data=file_bytes, file_name=fname, mime=mime, key=f"dl_save_new_{vid}")
             except RuntimeError as exc:
                 st.session_state[dl_key] = False
-                # fix: clear phantom local_path pointer so videos.json stays clean
-                # after a failed download (e.g. yt-dlp verification error).
                 if video.local_path:
                     video.local_path = None
                     storage.update_video(video)
@@ -313,13 +317,6 @@ def _render_download_tab(video: Video) -> None:
 
 
 # ── fix(B2): clickable timestamps ─────────────────────────────────────────
-# _linkify_timestamps is extracted by the test suite via ast.get_source_segment
-# and exec()d in a minimal namespace that contains ONLY `re`.  All helpers
-# (regex constant, seconds converter) must therefore be defined as local
-# variables *inside* the function body so they are self-contained.
-#
-# Additional fix(B10): HTML-escape the input text before inserting anchors so
-# that raw <script> tags in transcripts cannot pass through unescaped.
 def _linkify_timestamps(text: str, video_id: str) -> str:
     """Replace HH:MM:SS / MM:SS patterns with YouTube deep-link HTML anchors.
 
@@ -330,7 +327,6 @@ def _linkify_timestamps(text: str, video_id: str) -> str:
     """
     _TS_RE = re.compile(r"\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b")  # [H:]M:SS
 
-    # HTML-escape special chars so raw <script> tags in transcripts are neutered
     _ESC = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;"}
     safe = re.sub(r'[&<>"\'`]', lambda m: _ESC.get(m.group(0), m.group(0)), text)
 
@@ -338,8 +334,6 @@ def _linkify_timestamps(text: str, video_id: str) -> str:
         h, m, s = match.group(1), match.group(2), match.group(3)
         total   = (int(h) if h else 0) * 3600 + int(m) * 60 + int(s)
         label   = match.group(0)
-        # Build the canonical watch URL with a &t= parameter.
-        # Handles both youtu.be/ID and youtube.com/watch?v=ID forms.
         if "youtube.com/watch" in video_id:
             url = f"{video_id}&t={total}s"
         else:
@@ -358,7 +352,6 @@ def _render_transcript_tab(video: Video) -> None:
     vid = video.video_id
     if video.transcript_text:
         st.caption(f"Source: `{video.transcript_source or 'unknown'}`  ·  Timestamps are clickable YouTube deep-links 🔗")
-        # Toggle: linked view vs raw text area
         view_mode = st.radio(
             "View",
             ["🔗 Clickable timestamps", "📋 Raw text"],
@@ -368,7 +361,6 @@ def _render_transcript_tab(video: Video) -> None:
         )
         if view_mode == "🔗 Clickable timestamps":
             linked = _linkify_timestamps(video.transcript_text, vid)
-            # Render in a scrollable container so it doesn't blow up the page
             st.markdown(
                 f"""<div style="max-height:380px;overflow-y:auto;
                     background:var(--background-color,#f8f9fa);
@@ -436,7 +428,6 @@ def _render_detail_page(video: Video) -> None:
         st.caption(f"📺 {video.channel}  ·  ⏱ {video.duration}  ·  {(video.published_at or '')[:10]}")
         st.markdown(f"🔗 [Watch on YouTube]({video.url})")
         if video.tags:
-            # Feature 3 — tag chips as badge-style links in detail header
             tag_html = "  ".join(
                 f'<span style="background:#e8f4f8;border:1px solid #b3d7e8;border-radius:12px;'
                 f'padding:2px 9px;font-size:0.78rem;color:#1a6b8a;white-space:nowrap;">🏷️ {t}</span>'
@@ -494,7 +485,6 @@ def _render_detail_page(video: Video) -> None:
             video.manual_notes = new_notes
             storage.update_video(video)
             st.success("✅ Notes saved.")
-        # Export Study Guide — available whenever there is at least a summary or notes
         has_content = any([
             video.summary_paragraph,
             video.summary_bullets,
@@ -597,7 +587,6 @@ def _render_video_card(video: Video) -> None:
         title_display = video.title[:52] + "..." if len(video.title) > 52 else video.title
         st.markdown(f"**{title_display}**")
         st.caption(f"{video.channel} · {video.duration}")
-        # Feature 3 — tag chips
         if video.tags:
             _render_tag_chips(video.tags)
         _render_progress_bar(video, compact=True)
@@ -616,6 +605,117 @@ def _render_video_card(video: Video) -> None:
         if st.button("📌 View Details", key=f"view_{video.video_id}", width="stretch"):
             st.session_state["detail_video_id"] = video.video_id
             st.rerun()
+
+
+# ╔══════════════════════════════════════════════════════
+# ║  DASHBOARD CHARTS  (v0.9.0)
+# ╚══════════════════════════════════════════════════════
+
+def _render_dashboard_charts(videos: list[Video]) -> None:
+    """Render three Plotly insight charts below the metrics row."""
+    try:
+        import plotly.graph_objects as go  # type: ignore[import-untyped]
+    except ImportError:
+        st.warning("📦 `plotly` not installed — run `pip install plotly` to enable charts.")
+        return
+
+    all_statuses = [s.value for s in WatchStatus]
+    counts       = {s: 0 for s in all_statuses}
+    watch_hours  = {s: 0.0 for s in all_statuses}
+
+    for v in videos:
+        counts[v.status.value] += 1
+        if v.duration_sec > 0:
+            watch_hours[v.status.value] += v.duration_sec / 3600
+
+    # ── bucket videos into 4 progress bands
+    bands       = ["0–25%", "25–50%", "50–75%", "75–100%"]
+    band_counts = {s: [0, 0, 0, 0] for s in all_statuses}
+    for v in videos:
+        pct = v.progress_pct
+        idx = min(int(pct // 25), 3)
+        band_counts[v.status.value][idx] += 1
+
+    chart_col1, chart_col2, chart_col3 = st.columns(3)
+
+    # ── Chart 1: Library by status (donut)
+    with chart_col1:
+        st.markdown("**🍩 Library by Status**")
+        labels  = [s for s in all_statuses if counts[s] > 0]
+        values  = [counts[s] for s in labels]
+        colors  = [_STATUS_HEX[s] for s in labels]
+        fig1 = go.Figure(go.Pie(
+            labels=[s.capitalize() for s in labels],
+            values=values,
+            hole=0.55,
+            marker=dict(colors=colors, line=dict(color="white", width=2)),
+            textinfo="label+percent",
+            hovertemplate="%{label}: %{value} video(s)<extra></extra>",
+        ))
+        fig1.update_layout(
+            margin=dict(t=10, b=10, l=10, r=10),
+            height=260,
+            showlegend=False,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig1, use_container_width=True)
+
+    # ── Chart 2: Watch time by status (horizontal bar)
+    with chart_col2:
+        st.markdown("**⏱ Watch Time by Status (hours)**")
+        labels_wt = [s for s in all_statuses if watch_hours[s] > 0]
+        if not labels_wt:
+            st.caption("No duration data yet.")
+        else:
+            values_wt = [round(watch_hours[s], 2) for s in labels_wt]
+            colors_wt = [_STATUS_HEX[s] for s in labels_wt]
+            fig2 = go.Figure(go.Bar(
+                x=values_wt,
+                y=[s.capitalize() for s in labels_wt],
+                orientation="h",
+                marker=dict(color=colors_wt, line=dict(color="white", width=1)),
+                hovertemplate="%{y}: %{x:.2f} h<extra></extra>",
+                text=[f"{v:.1f}h" for v in values_wt],
+                textposition="outside",
+            ))
+            fig2.update_layout(
+                margin=dict(t=10, b=10, l=10, r=40),
+                height=260,
+                xaxis=dict(title="", showgrid=True, gridcolor="rgba(0,0,0,0.08)"),
+                yaxis=dict(title=""),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+
+    # ── Chart 3: Progress heatmap — stacked bar per band
+    with chart_col3:
+        st.markdown("**📊 Progress Distribution**")
+        active = [s for s in all_statuses if any(band_counts[s])]
+        if not active:
+            st.caption("No progress data yet.")
+        else:
+            fig3 = go.Figure()
+            for s in active:
+                fig3.add_trace(go.Bar(
+                    name=s.capitalize(),
+                    x=bands,
+                    y=band_counts[s],
+                    marker_color=_STATUS_HEX[s],
+                    hovertemplate=f"{s.capitalize()}: %{{y}} video(s)<extra></extra>",
+                ))
+            fig3.update_layout(
+                barmode="stack",
+                margin=dict(t=10, b=10, l=10, r=10),
+                height=260,
+                xaxis=dict(title="Progress band"),
+                yaxis=dict(title="Videos", dtick=1),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(fig3, use_container_width=True)
 
 
 # ╔══════════════════════════════════════════════════════
@@ -687,6 +787,11 @@ if page == "📊 Dashboard":
                 h2, rem2 = divmod(total_sec, 3600)
                 st.metric("📽️ Total", f"{h2}h {rem2//60}m")
 
+        # ── v0.9.0: Insight charts
+        st.divider()
+        st.subheader("📈 Insights")
+        _render_dashboard_charts(all_vids)
+
         st.divider()
         st.subheader("🕒 Recent Videos")
         recent = sorted(videos, key=lambda v: v.updated_at, reverse=True)[:6]
@@ -705,7 +810,6 @@ elif page == "➕ Add Video":
     if submitted and url:
         with st.spinner("📡 Fetching video info..."):
             try:
-                # fix: pass storage so already-saved videos skip the API call
                 fetched = fetcher.fetch_video(url, storage=storage)
             except Exception as exc:
                 st.error(f"❌ Failed to fetch: {exc}")
@@ -735,7 +839,7 @@ elif page == "➕ Add Video":
                 st.success(f"✅ Transcript extracted via `{source}`")
         if video.transcript_text:
             _finish_add_video(video)
-            st.stop()  # fix: prevent double-render of the transcript fallback UI
+            st.stop()
         else:
             st.warning("⚠️ Auto transcript unavailable. Paste or upload below.")
             paste_tab, upload_tab = st.tabs(["Paste Transcript", "Upload .txt"])
@@ -770,7 +874,6 @@ elif page == "📚 Library":
             st.stop()
     st.title("📚 Your Library")
 
-    # ── Row 1: Search bar (Feature 1)
     search_q = st.text_input(
         "🔍 Search",
         placeholder="Filter by title or channel…",
@@ -778,7 +881,6 @@ elif page == "📚 Library":
         label_visibility="collapsed",
     )
 
-    # ── Row 2: Status filter + Sort (Feature 4 adds Date Added option)
     col_f, col_ch, col_s = st.columns([2, 2, 2])
     with col_f:
         status_filter = st.selectbox(
@@ -793,16 +895,11 @@ elif page == "📚 Library":
             label_visibility="collapsed",
         )
 
-    # ── Apply status filter — single read, reused for channel & tag pools
-    # fix(B1): build all_videos once here; channel and tag pools derived from
-    # this filtered list so they stay consistent with the active status filter.
     all_videos: list[Video] = (
         storage.get_all_videos() if status_filter == "All"
         else storage.filter_by_status(WatchStatus(status_filter))
     )
 
-    # ── Feature 2: Channel multiselect filter
-    # fix(B1): use all_videos (post-status) instead of storage.get_all_videos()
     all_channels: list[str] = sorted({v.channel for v in all_videos if v.channel})
     selected_channels: list[str] = []
     with col_ch:
@@ -816,8 +913,6 @@ elif page == "📚 Library":
                 label_visibility="collapsed",
             )
 
-    # ── Row 3: Tag chip filter
-    # fix(B1): use all_videos (post-status) instead of storage.get_all_videos()
     all_tags: list[str] = sorted(
         {tag for v in all_videos for tag in (v.tags or [])}
     )
@@ -831,7 +926,6 @@ elif page == "📚 Library":
             key="lib_tag_filter",
         )
 
-    # ── Apply inline search (Feature 1)
     videos = all_videos
     if search_q:
         q_lower = search_q.lower()
@@ -840,18 +934,15 @@ elif page == "📚 Library":
             if q_lower in v.title.lower() or q_lower in (v.channel or "").lower()
         ]
 
-    # ── Apply channel filter (Feature 2)
     if selected_channels:
         videos = [v for v in videos if v.channel in selected_channels]
 
-    # ── Apply tag filter (AND logic)
     if selected_tags:
         videos = [
             v for v in videos
             if all(tag in (v.tags or []) for tag in selected_tags)
         ]
 
-    # ── Sort (Feature 4 adds Date Added)
     if sort_by == "Title A–Z":
         videos = sorted(videos, key=lambda v: v.title.lower())
     elif sort_by == "Progress ↑":
@@ -862,10 +953,9 @@ elif page == "📚 Library":
         videos = sorted(videos, key=lambda v: v.created_at if hasattr(v, "created_at") and v.created_at else "", reverse=True)
     elif sort_by == "Date Added ↑":
         videos = sorted(videos, key=lambda v: v.created_at if hasattr(v, "created_at") and v.created_at else "")
-    else:  # Recently updated
+    else:
         videos = sorted(videos, key=lambda v: v.updated_at, reverse=True)
 
-    # ── Count caption
     if not videos:
         active_filters = []
         if search_q:
