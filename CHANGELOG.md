@@ -8,6 +8,25 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
+## [v0.8.0] — 2026-06-20
+
+### Added
+- **Inline Library search bar** — a live text filter at the top of the Library page matches videos by title or channel name instantly, without navigating to the Search page. Composes with status filter, channel filter, and tag filter simultaneously.
+- **Channel multiselect filter** — a new channel dropdown in the Library filter row lets users narrow the grid to one or more specific channels. Built dynamically from all stored `video.channel` values.
+- **Tag chips on video cards** — each card in the Library, Dashboard, and Search results now renders up to 3 tag pills (`🏷️ python`, `+2 more`) below the channel/duration line, making tags visible at a glance without opening the detail page.
+- **Sort by Date Added** — the Library sort dropdown now includes "Date Added ↓" and "Date Added ↑" options, reading `video.created_at` (already stored on the model since v0.3.0).
+- **Clickable timestamps in Transcript tab** — a view-mode toggle (`🔗 Clickable timestamps` / `📋 Raw text`) appears in the Transcript tab. In linked mode, every `MM:SS` and `H:MM:SS` pattern in the transcript is converted to a YouTube deep-link (`?t=Ns`) that opens the exact moment in a new tab. A `_linkify_timestamps` helper (regex-based, zero extra dependencies) handles the conversion.
+- **Tag filtering in Library** — multiselect chip row between status filter and video grid; AND logic requires a video to match all selected tags; count caption and empty-state message update to reflect active tag filters. *(Shipped as part of this release batch.)*
+
+### Changed
+- `_render_detail_page` — tag display in the video header upgraded from plain `st.caption` text to styled HTML badge chips for visual consistency with card chips.
+- `_render_transcript_tab` extracted into its own function for clarity; Transcript tab now routes through this helper.
+- Library filter row expanded from 2 columns (status + sort) to 3 columns (status + channel + sort) to accommodate the new channel filter without crowding.
+- Library count caption enriched to show active search query, channels, and tags alongside the video count.
+- Library empty-state message now lists all active filters so users know exactly why no results appear.
+
+---
+
 ## [v0.7.2] — 2026-06-20
 
 ### Fixed
