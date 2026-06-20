@@ -1,43 +1,27 @@
-"""Shared pytest fixtures for YouTube Learning Tracker test suite."""
+"""Pytest fixtures for YouTube Learning Tracker test suite.
+
+Factory helpers (make_video, make_collection) live in tests/helpers.py.
+This file only contains pytest fixtures so conftest is never imported directly.
+"""
+
+import sys
+import os
+
+# Ensure the project root is on sys.path so `from models...` / `from core...`
+# work when pytest is run from the project root directory.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+# Also put tests/ on sys.path so `from helpers import ...` works.
+TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if TESTS_DIR not in sys.path:
+    sys.path.insert(0, TESTS_DIR)
 
 import pytest
-from models.video import Video, WatchStatus
-from models.collection import Collection
+from helpers import make_video, make_collection
 from core.storage import Storage
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def make_video(
-    video_id: str = "abcdefghijk",
-    title: str = "Test Video",
-    channel: str = "Test Channel",
-    duration: str = "10:00",
-    status: WatchStatus = WatchStatus.SAVED,
-    tags: list[str] | None = None,
-) -> Video:
-    return Video(
-        video_id=video_id,
-        url=f"https://www.youtube.com/watch?v={video_id}",
-        title=title,
-        channel=channel,
-        thumbnail_url="https://img.youtube.com/vi/abcdefghijk/hqdefault.jpg",
-        published_at="2024-01-01T00:00:00Z",
-        duration=duration,
-        status=status,
-        tags=tags or [],
-    )
-
-
-def make_collection(name: str = "My Collection", video_ids: list[str] | None = None) -> Collection:
-    return Collection(name=name, video_ids=video_ids or [])
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 @pytest.fixture
 def storage(tmp_path):

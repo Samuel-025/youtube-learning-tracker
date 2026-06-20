@@ -2,8 +2,8 @@
 
 import threading
 import pytest
-from models.video import Video, WatchStatus
-from conftest import make_video, make_collection
+from models.video import WatchStatus
+from helpers import make_video, make_collection
 
 
 # ---------------------------------------------------------------------------
@@ -48,10 +48,11 @@ class TestVideoCRUD:
         assert storage.delete_video("ghost_id") is False
 
     def test_update_video_changes_updated_at(self, storage):
+        import time
         v = make_video()
         storage.save_video(v)
         old_ts = v.updated_at
-        import time; time.sleep(0.01)
+        time.sleep(0.01)
         v.title = "New Title"
         storage.update_video(v)
         result = storage.get_video(v.video_id)

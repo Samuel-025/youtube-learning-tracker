@@ -2,7 +2,7 @@
 
 import pytest
 from models.collection import Collection
-from conftest import make_video, make_collection
+from helpers import make_video, make_collection
 
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,6 @@ class TestGetVideosInCollection:
         assert "vid2aaaaaaa" not in ids
 
     def test_skips_missing_video_ids_gracefully(self, storage):
-        """Video IDs in a collection that no longer exist in library are silently skipped."""
         coll = make_collection(video_ids=["deleted_vid_id"])
         storage.save_collection(coll)
         result = storage.get_videos_in_collection(coll.id)

@@ -3,7 +3,7 @@
 import dataclasses
 import pytest
 from models.video import Video, WatchStatus, _parse_duration_sec
-from conftest import make_video
+from helpers import make_video
 
 
 # ---------------------------------------------------------------------------
@@ -117,14 +117,12 @@ class TestRoundTrip:
         assert v2.tags == ["python", "beginner"]
 
     def test_unknown_keys_dropped_silently(self):
-        """from_dict must tolerate extra fields added by future schema versions."""
         d = make_video().to_dict()
         d["future_field_xyz"] = "some value"
         v2 = Video.from_dict(d)
         assert not hasattr(v2, "future_field_xyz")
 
     def test_missing_keys_fall_back_to_defaults(self):
-        """from_dict must tolerate missing optional fields (older JSON files)."""
         d = make_video().to_dict()
         del d["manual_notes"]
         del d["tags"]
@@ -138,20 +136,17 @@ class TestRoundTrip:
         v2 = Video.from_dict(d)
         assert v2.status == WatchStatus.SAVED
 
-    # B11 fix: from_dict must use dataclasses.fields() introspection
     def test_from_dict_known_set_is_dynamic(self):
-        """Verify from_dict derives 'known' from live dataclass, not hardcoded set."""
+        """B11: from_dict derives 'known' from live dataclass, not hardcoded set."""
         field_names = {f.name for f in dataclasses.fields(Video)}
-        # If from_dict used a hardcoded set, adding a new field would silently
-        # drop it; this test ensures every current field survives the round-trip.
         v = make_video()
         v2 = Video.from_dict(v.to_dict())
         for name in field_names:
             assert getattr(v2, name) == getattr(v, name), f"Field '{name}' lost in round-trip"
 
-    # B4 fix: from_dict recalculates duration_sec when stored value is 0
     def test_duration_sec_recalculated_when_zero(self):
+        """B4: from_dict recalculates duration_sec when stored value is 0."""
         d = make_video(duration="5:00").to_dict()
-        d["duration_sec"] = 0  # simulate old/missing value
+        d["duration_sec"] = 0
         v2 = Video.from_dict(d)
         assert v2.duration_sec == 300

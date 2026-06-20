@@ -2,14 +2,11 @@
 
 import pytest
 from models.video import WatchStatus
-from conftest import make_video
+from helpers import make_video
 
 
 class TestSearchVideos:
-    """Comprehensive search tests — one fixture, multiple field assertions."""
-
     def _populate(self, storage):
-        """Seed storage with a small diverse library."""
         v1 = make_video("id1aaaaaaa1", title="Python OOP Masterclass", channel="Tech With Tim")
         v1.summary_bullets = ["Classes and objects", "Inheritance explained"]
         v1.auto_notes = ["Great for beginners"]
@@ -71,8 +68,9 @@ class TestSearchVideos:
 
     def test_search_partial_match(self, storage):
         self._populate(storage)
-        results = storage.search_videos("anal")  # matches 'analysis' and 'analyst'
-        assert len(results) == 1  # only v3 title and channel contain 'anal'
+        # 'anal' matches 'Analysis' (title) and 'Analyst' (channel) — both in v3
+        results = storage.search_videos("anal")
+        assert len(results) == 1
 
     def test_search_no_match(self, storage):
         self._populate(storage)
@@ -81,15 +79,8 @@ class TestSearchVideos:
     def test_search_empty_library(self, storage):
         assert storage.search_videos("python") == []
 
-    def test_search_returns_multiple_matches(self, storage):
-        self._populate(storage)
-        # 'data' matches v3 tag; but let's also add it to v1 notes
-        results = storage.search_videos("python")
-        # Only v1 has python in title/tags
-        assert len(results) == 1
-
     def test_search_empty_query_returns_all(self, storage):
-        """An empty search string matches everything (q in any string is always True)."""
+        """Empty query string matches every video."""
         self._populate(storage)
         results = storage.search_videos("")
         assert len(results) == 3
