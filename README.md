@@ -1,6 +1,6 @@
 # 📺 YouTube Learning Tracker
 
-> **v0.7.0** — Save, organise, summarise, track, and download YouTube videos from a clean Streamlit web app running entirely on your local machine.
+> **v0.7.1** — Save, organise, summarise, track, and download YouTube videos from a clean Streamlit web app running entirely on your local machine.
 
 ---
 
@@ -26,11 +26,11 @@
 
 ### 1. Prerequisites
 
-| Tool | Install |
-|---|---|
-| Python 3.11 | [python.org](https://python.org) |
-| FFmpeg 6+ | `winget install --id Gyan.FFmpeg -e` (Windows) |
-| Git | [git-scm.com](https://git-scm.com) |
+| Tool | Version | Install |
+|---|---|---|
+| Python | 3.11+ | [python.org](https://python.org) |
+| FFmpeg | 6+ | `winget install --id Gyan.FFmpeg -e` (Windows) |
+| Git | any | [git-scm.com](https://git-scm.com) |
 
 > **After installing FFmpeg, close and reopen your terminal** so the PATH updates.
 
@@ -113,7 +113,7 @@ The Download tab on every video detail page lets you save videos locally.
 | 📹 Video 1080p | H.264 + AAC → MP4 | All players incl. Windows Media Player |
 | 📹 Video Best | H.264 + AAC → MP4 | All players incl. Windows Media Player |
 
-> Downloads use **H.264** specifically to ensure compatibility with Windows Media Player, which cannot decode AV1 (YouTube’s newer default codec).
+> Downloads use **H.264** specifically to ensure compatibility with Windows Media Player, which cannot decode AV1 (YouTube's newer default codec).
 
 ### FFmpeg Status
 
@@ -164,7 +164,7 @@ youtube-learning-tracker/
 
 ## 🔧 Troubleshooting
 
-### yt-dlp: “Signature solving failed” / muted download / missing formats
+### yt-dlp: "Signature solving failed" / muted download / missing formats
 
 YouTube regularly updates its JS challenge. Keeping yt-dlp current fixes this.
 
@@ -176,13 +176,15 @@ Go to **⚙️ Settings → Update yt-dlp** and click the button. Restart Stream
 py -3.11 -m pip install -U yt-dlp
 ```
 
-### Video plays without sound / won’t play in Windows Media Player
+> The downloader automatically uses `player_client=['web','android']` to bypass the Deno/EJS challenge solver requirement on most videos. If warnings still appear, updating yt-dlp resolves them.
+
+### Video plays without sound / won't play in Windows Media Player
 
 YouTube serves AV1 by default — Windows Media Player cannot decode AV1. The downloader forces H.264. If you have an old download:
 1. Delete the file from `downloads/`
 2. Re-download via the app
 
-### “FFmpeg not found”
+### "FFmpeg not found"
 
 ```powershell
 winget install --id Gyan.FFmpeg -e
@@ -190,7 +192,7 @@ winget install --id Gyan.FFmpeg -e
 ffmpeg -version
 ```
 
-### “yt-dlp not installed”
+### "yt-dlp not installed"
 
 ```powershell
 py -3.11 -m pip install yt-dlp
