@@ -1,4 +1,4 @@
 @echo off
 echo Starting YouTube Learning Tracker...
-python -m streamlit run app/streamlit_app.py
+py -3.11 -m streamlit run app/streamlit_app.py
 pause
