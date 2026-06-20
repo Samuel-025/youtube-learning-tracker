@@ -15,7 +15,15 @@ All notable changes to YouTube Learning Tracker are documented here.
   - **🍩 Library by Status (donut)** — proportion of videos in each watch status with colour-coded segments and percent labels.
   - **⏱ Watch Time by Status (horizontal bar)** — total content hours broken out by status; only statuses with duration data are shown.
   - **📊 Progress Distribution (stacked bar)** — video counts bucketed into four progress bands (0–25%, 25–50%, 50–75%, 75–100%), stacked by status so you can see where videos are concentrated.
+- **Weekly Watch Goal widget** — displayed in the Dashboard between the overall progress bar and Insights; computes ISO-week watched hours against a user-defined goal and renders a progress bar + remaining-hours metric.
+- **Settings — Weekly Watch Goal setter** — numeric input in Settings lets users define their weekly hour target; persisted via `SettingsStore`.
+- **`SettingsStore`** (`core/settings_store.py`) — lightweight JSON persistence layer for app-level settings (e.g., weekly goal); no schema migrations required.
 - **`plotly>=5.0.0`** added to `requirements.txt`; charts degrade gracefully with an install hint if the package is absent.
+- **Full test suite** (`tests/`) — `conftest.py` + 5 test modules covering storage, model, transcript linkifier, collections, and bug regressions (B1–B14).
+
+### Fixed
+- `_TIMESTAMP_RE` moved from module-level constant into `_linkify_timestamps` as a local compiled pattern so AST-exec test harness passes without a `NameError`.
+- `make_video` / `make_collection` helpers extracted to `tests/helpers.py` to fix `ModuleNotFoundError` on conftest import.
 
 ---
 
