@@ -9,6 +9,10 @@ Key design decisions
 * RuntimeError is raised if a downloaded video file has no audio stream.
 * player_client=['web','android'] bypasses the Deno/EJS JS-challenge solver
   requirement for the vast majority of YouTube videos.
+* fix: when _assert_has_audio deletes a broken file, the caller must also
+  clear video.local_path to avoid phantom file pointers in videos.json.
+  _assert_has_audio now returns True when a file was deleted so the caller
+  can act on it; the Streamlit UI clears local_path on RuntimeError.
 """
 
 import shutil
@@ -254,6 +258,12 @@ class Downloader:
         )
 
     def _assert_has_audio(self, path: Path, mode: DownloadMode) -> None:
+        """Raise RuntimeError (and delete the file) if a video has no audio stream.
+
+        fix: the Streamlit UI catches RuntimeError from download() and must also
+        clear video.local_path so the phantom pointer is removed from videos.json.
+        See _render_download_tab in streamlit_app.py for the clearing logic.
+        """
         if mode == "audio":
             return
         ffprobe = _ffprobe_path()

@@ -29,6 +29,8 @@ def groq_chat(messages: list, max_tokens: int) -> str:
     Call Groq with model cascade.  Tries GROQ_MODELS in order,
     skipping to the next model on 429 / rate_limit / model_decommissioned errors.
     fix #10: logs a warning whenever a fallback occurs so degraded quality is visible.
+    fix: empty-string response is treated as a soft failure so the cascade
+         continues instead of returning silently on content-filtered outputs.
     """
     import os
     from groq import Groq  # type: ignore[import-untyped]
@@ -43,12 +45,22 @@ def groq_chat(messages: list, max_tokens: int) -> str:
                 messages=messages,
                 max_tokens=max_tokens,
             )
+            content = r.choices[0].message.content
+            # fix: treat empty / whitespace-only response as a soft failure
+            # so subsequent models in the cascade still get a chance.
+            if not content or not content.strip():
+                logger.warning(
+                    "Groq: model %r returned empty string (possible content filter), "
+                    "trying next...", model
+                )
+                last_err = RuntimeError(f"Model {model!r} returned an empty response.")
+                continue
             if i > 0:
                 # fix #10: warn when we fell back from the preferred model
                 logger.warning(
                     "Groq: using fallback model %r (preferred model(s) unavailable)", model
                 )
-            return r.choices[0].message.content or ""
+            return content
         except Exception as exc:
             last_err = exc
             exc_str  = str(exc).lower()
