@@ -1,6 +1,6 @@
 # 📺 YouTube Learning Tracker
 
-> **v0.7.1** — Save, organise, summarise, track, and download YouTube videos from a clean Streamlit web app running entirely on your local machine.
+> **v0.8.0** — Save, organise, summarise, track, and download YouTube videos from a clean Streamlit web app running entirely on your local machine.
 
 ---
 
@@ -8,15 +8,19 @@
 
 | Feature | Description |
 |---|---|
-| 📥 Save videos | Paste any YouTube URL — fetches metadata, thumbnail & transcript automatically |
-| 📚 Library | Browse saved videos, filter by status, sort by title / date / progress |
+| 📥 Save videos | Paste any YouTube URL — fetches metadata, thumbnail, tags & transcript automatically |
+| 📚 Library | Browse saved videos; filter by status, channel, and tags; sort by title / date added / progress |
+| 🔎 Inline Library search | Live text filter by title or channel — composes with all other filters simultaneously |
+| 🏷️ Tag filtering | Multiselect tag chips in the Library — AND logic across all selected tags |
 | 📁 Collections | Group videos into named, emoji-tagged playlists with per-collection progress bars |
 | ⏱️ Watch Progress | Slider + quick-set buttons to track how far through each video you are |
 | 🤖 AI Summary | Bullet-point summary + paragraph overview generated from the transcript |
 | 🗒️ Notes | Auto-generated notes + your own manual notes per video |
+| 📥 Export Study Guide | Download a portable `.md` file with title, tags, summary, takeaways, and notes |
 | 💬 Q&A | Ask any question about a video — answered from its transcript |
+| 🔗 Clickable timestamps | Transcript tab toggle converts every `MM:SS` to a YouTube deep-link that opens the exact moment |
 | ⬇️ Download | Save as **MP3** (audio) or **MP4** (720p / 1080p / best) using yt-dlp + FFmpeg |
-| 🔍 Search | Full-text search across titles, channels, notes, and summaries |
+| 🔍 Search | Full-text search across titles, channels, notes, summaries, and auto-notes |
 | 📊 Dashboard | At-a-glance counts + overall watch-progress bar across your whole library |
 | ⚙️ Settings | One-click **yt-dlp updater** to fix YouTube signature / JS-challenge errors |
 
@@ -97,6 +101,23 @@ Collections let you group any saved videos into named playlists.
 - Setting progress to 100% automatically marks the video as **Completed**
 - The Dashboard shows an overall progress bar across your whole library
 - Library can be sorted by **Progress ↑** or **Progress ↓**
+
+---
+
+## 🏷️ Tags
+
+- Tags are ingested automatically from the YouTube Data API (`snippet.tags`) when you add a video
+- Up to 3 tag chips appear on every video card in the Library, Dashboard, and Search results
+- Use the **Filter by tag** multiselect in the Library to narrow results — AND logic across all selected tags
+- First 8 tags are shown in the video detail header
+
+---
+
+## 🔗 Clickable Timestamps
+
+- Open any video's **Transcript** tab and toggle to **🔗 Clickable timestamps** mode
+- Every `MM:SS` or `H:MM:SS` pattern becomes a clickable YouTube deep-link (`?t=Ns`) that opens the exact moment in a new tab
+- Switch back to **📋 Raw text** mode for plain copy-paste
 
 ---
 
