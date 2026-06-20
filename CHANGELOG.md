@@ -8,6 +8,20 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
+## [v0.7.2] — 2026-06-20
+
+### Fixed
+- **`local_path` type** — changed `str = ""` to `str | None = None` on `Video` model; resolves two Pylance `reportAttributeAccessIssue` errors in `streamlit_app.py` (lines 278, 309). Empty-string sentinel from existing `videos.json` files is normalised to `None` in `__post_init__` for backwards compatibility.
+- **Phantom `local_path` after download failure** — `_render_download_tab` now clears `video.local_path = None` and persists to storage in two places:
+  - On every render, if `local_path` is set but the file no longer exists on disk (externally deleted)
+  - Immediately inside the `RuntimeError` handler when `downloader.download()` fails, so no stale pointer remains in `videos.json`
+
+### Added
+- **Export Study Guide (.md)** — new `_export_study_guide(video)` helper composes title, channel, URL, tags, summary paragraph, key takeaways, auto-notes, and manual notes into a portable Markdown file. A `📥 Export Study Guide (.md)` download button appears in the Notes tab whenever any content field is populated.
+- **YouTube API tag ingestion** — `video.tags` (already stored on the model) is now displayed in two places: the video detail page header (`🏷️ tag1 · tag2`, first 8 tags) and the Add Video preview card (first 6 tags). Tags are populated automatically from `item["snippet"]["tags"]` in the YouTube Data API response; falls back to `[]` gracefully when absent or when the API key is unused.
+
+---
+
 ## [v0.7.1] — 2026-06-20
 
 ### Fixed
