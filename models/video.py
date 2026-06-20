@@ -56,4 +56,75 @@ def _parse_duration_sec(duration_str: str) -> int:
 @dataclass
 class Video:
     video_id:             str
-    url:            
+    url:                  str
+    title:                str
+    channel:              str
+    thumbnail_url:        str
+    published_at:         str
+    duration:             str
+    status:               WatchStatus  = WatchStatus.SAVED
+    transcript_text:      str          = ""
+    transcript_source:    str          = ""   # 'yt-dlp (manual subs)', etc.
+    summary_bullets:      list[str]    = field(default_factory=list)
+    summary_paragraph:    str          = ""
+    auto_notes:           list[str]    = field(default_factory=list)
+    manual_notes:         str          = ""
+    tags:                 list[str]    = field(default_factory=list)
+    local_path:           str | None   = None  # absolute path to downloaded file; None = not downloaded
+    # ── Watch progress ───────────────────────────────────────────────
+    watch_progress_sec:   int          = 0    # seconds watched so far
+    duration_sec:         int          = 0    # total seconds (parsed from `duration`)
+    # ────────────────────────────────────────────────
+    created_at:           str          = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at:           str          = field(default_factory=lambda: datetime.now().isoformat())
+
+    def __post_init__(self):
+        """Auto-populate duration_sec from the human-readable duration string."""
+        if self.duration_sec == 0 and self.duration:
+            self.duration_sec = _parse_duration_sec(self.duration)
+        # Coerce any non-str items that crept in via JSON into str
+        self.summary_bullets = [str(b) for b in self.summary_bullets]
+        self.auto_notes      = [str(n) for n in self.auto_notes]
+        self.tags            = [str(t) for t in self.tags]
+        # Normalise legacy empty-string sentinel from old JSON files
+        if self.local_path == "":
+            self.local_path = None
+
+    @property
+    def progress_pct(self) -> float:
+        """Return watch progress as 0.0 – 100.0.  Returns 0 if duration unknown."""
+        if self.duration_sec and self.duration_sec > 0:
+            return min(100.0, self.watch_progress_sec / self.duration_sec * 100)
+        return 0.0
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d["status"] = self.status.value
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Video":
+        """
+        Safe loader: tolerates extra/missing keys as the schema evolves.
+        Unknown keys are silently dropped; missing keys fall back to defaults.
+
+        B11 fix: uses dataclasses.fields() introspection instead of a hardcoded
+        'known' set, so newly added fields are never accidentally silently dropped.
+        """
+        known = {f.name for f in dataclasses.fields(cls)}
+        clean = {k: v for k, v in data.items() if k in known}
+        raw_status = clean.get("status", "saved")
+        try:
+            clean["status"] = WatchStatus(raw_status)
+        except ValueError:
+            clean["status"] = WatchStatus.SAVED
+
+        # B4 fix: if duration_sec is 0 but duration string is present, recalculate.
+        # Catches cases where a re-fetch corrected the duration string after initial save.
+        if not clean.get("duration_sec") and clean.get("duration"):
+            clean["duration_sec"] = _parse_duration_sec(clean["duration"])
+
+        return cls(**clean)
+
+    def update_timestamp(self):
+        self.updated_at = datetime.now().isoformat()
