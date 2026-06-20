@@ -771,14 +771,17 @@ elif page == "📚 Library":
             label_visibility="collapsed",
         )
 
-    # ── Apply status filter
-    all_videos = (
+    # ── Apply status filter — single read, reused for channel & tag pools
+    # fix(B1): build all_videos once here; channel and tag pools derived from
+    # this filtered list so they stay consistent with the active status filter.
+    all_videos: list[Video] = (
         storage.get_all_videos() if status_filter == "All"
         else storage.filter_by_status(WatchStatus(status_filter))
     )
 
     # ── Feature 2: Channel multiselect filter
-    all_channels: list[str] = sorted({v.channel for v in storage.get_all_videos() if v.channel})
+    # fix(B1): use all_videos (post-status) instead of storage.get_all_videos()
+    all_channels: list[str] = sorted({v.channel for v in all_videos if v.channel})
     selected_channels: list[str] = []
     with col_ch:
         if all_channels:
@@ -792,8 +795,9 @@ elif page == "📚 Library":
             )
 
     # ── Row 3: Tag chip filter
+    # fix(B1): use all_videos (post-status) instead of storage.get_all_videos()
     all_tags: list[str] = sorted(
-        {tag for v in storage.get_all_videos() for tag in (v.tags or [])}
+        {tag for v in all_videos for tag in (v.tags or [])}
     )
     selected_tags: list[str] = []
     if all_tags:
