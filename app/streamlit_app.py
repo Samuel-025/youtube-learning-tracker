@@ -348,18 +348,28 @@ def _render_download_tab(video: Video) -> None:
     )
     selected_display = st.selectbox("Format", options=mode_labels_display, key=f"dl_mode_{vid}")
     mode = list(DOWNLOAD_MODES.values())[mode_labels_display.index(selected_display)]
+
+    # ── Existing download: stream descriptor — no full-file RAM load ──────────
     if video.local_path and Path(video.local_path).exists():
         st.success(f"✅ Already downloaded: `{Path(video.local_path).name}`")
-        with open(video.local_path, "rb") as f:
-            file_bytes = f.read()
         fname = Path(video.local_path).name
         mime  = "audio/mpeg" if fname.endswith(".mp3") else ("audio/mp4" if fname.endswith(".m4a") else "video/mp4")
-        st.download_button(label="📥 Save to computer", data=file_bytes, file_name=fname, mime=mime, key=f"dl_save_{vid}")
+        # fix(OOM): pass open file stream directly — Streamlit chunks the read
+        # so arbitrarily large files never load entirely into server RAM.
+        with open(video.local_path, "rb") as f:
+            st.download_button(
+                label="📥 Save to computer",
+                data=f,
+                file_name=fname,
+                mime=mime,
+                key=f"dl_save_{vid}",
+            )
         st.divider()
         st.caption("Re-download in a different format ↓")
     elif video.local_path and not Path(video.local_path).exists():
         video.local_path = None
         storage.update_video(video)
+
     dl_key = f"dl_running_{vid}"
     if dl_key not in st.session_state:
         st.session_state[dl_key] = False
@@ -378,11 +388,17 @@ def _render_download_tab(video: Video) -> None:
                     with st.expander("⚠️ yt-dlp warnings", expanded=False):
                         for w in downloader.last_warnings:
                             st.caption(w)
-                with open(out_path, "rb") as f:
-                    file_bytes = f.read()
                 fname = out_path.name
                 mime  = "audio/mpeg" if fname.endswith(".mp3") else ("audio/mp4" if fname.endswith(".m4a") else "video/mp4")
-                st.download_button(label="📥 Save to computer", data=file_bytes, file_name=fname, mime=mime, key=f"dl_save_new_{vid}")
+                # fix(OOM): same streaming fix for newly downloaded file
+                with open(out_path, "rb") as f:
+                    st.download_button(
+                        label="📥 Save to computer",
+                        data=f,
+                        file_name=fname,
+                        mime=mime,
+                        key=f"dl_save_new_{vid}",
+                    )
             except RuntimeError as exc:
                 st.session_state[dl_key] = False
                 if video.local_path:
@@ -416,11 +432,49 @@ def _linkify_timestamps(text: str, video_id: str) -> str:
     return _TS_RE.sub(_replace, safe)
 
 
+def _extract_timestamps(text: str) -> list[tuple[str, int]]:
+    """Return [(label, total_seconds), ...] for every timestamp in text."""
+    _TS_RE = re.compile(r"\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b")
+    results: list[tuple[str, int]] = []
+    for m in _TS_RE.finditer(text):
+        h = int(m.group(1)) if m.group(1) else 0
+        mins = int(m.group(2))
+        secs = int(m.group(3))
+        results.append((m.group(0), h * 3600 + mins * 60 + secs))
+    return results
+
+
 def _render_transcript_tab(video: Video) -> None:
-    """Render the Transcript tab with clickable timestamp links."""
+    """Render the Transcript tab with clickable timestamps and embedded player."""
     vid = video.video_id
+
+    # ── feat: embedded in-app player ──────────────────────────────────────────
+    seek_key = f"seek_{vid}"
+    if seek_key not in st.session_state:
+        st.session_state[seek_key] = 0
+
+    st.markdown("#### 📺 In-App Player")
+    st.caption("Starts at the timestamp you last clicked below. Refresh seek by clicking a timestamp, then scroll back up.")
+    st.video(video.url, start_time=int(st.session_state[seek_key]))
+
     if video.transcript_text:
-        st.caption(f"Source: `{video.transcript_source or 'unknown'}`  ·  Timestamps are clickable YouTube deep-links 🔗")
+        timestamps = _extract_timestamps(video.transcript_text)
+        if timestamps:
+            st.markdown("**⏩ Jump to timestamp:**")
+            # Render up to 12 seek buttons in a responsive grid
+            ts_cols = st.columns(min(len(timestamps), 6))
+            for idx, (label, secs) in enumerate(timestamps[:12]):
+                col_idx = idx % 6
+                with ts_cols[col_idx]:
+                    if st.button(label, key=f"seek_btn_{vid}_{idx}"):
+                        st.session_state[seek_key] = secs
+                        st.rerun()
+
+        st.divider()
+        st.caption(
+            f"Source: `{video.transcript_source or 'unknown'}`  ·  "
+            "Timestamps are clickable YouTube deep-links 🔗"
+        )
         view_mode = st.radio(
             "View",
             ["🔗 Clickable timestamps", "📋 Raw text"],
@@ -997,9 +1051,11 @@ def page_library() -> None:
     elif due_filter == "No due date":
         filtered = [v for v in filtered if not getattr(v, "due_date", None)]
 
+    # fix(sort): use date.min as fallback so undated videos always sink to the
+    # bottom regardless of sort direction (soonest asc OR latest desc).
     def _due_sort_key(v: Video):
         dd = getattr(v, "due_date", None)
-        return date.fromisoformat(dd) if dd else date(9999, 12, 31)
+        return date.fromisoformat(dd) if dd else date.min
 
     if sort_by == "Date added (newest)":
         filtered.sort(key=lambda v: v.created_at or "", reverse=True)
@@ -1018,9 +1074,19 @@ def page_library() -> None:
     elif sort_by == "Rating ↓":
         filtered.sort(key=lambda v: getattr(v, "rating", 0) or 0, reverse=True)
     elif sort_by == "Due date (soonest)":
-        filtered.sort(key=_due_sort_key)
-    elif sort_by == "Due date (latest)":
+        # undated = date.min → they sort before everything, so reverse to push them last
         filtered.sort(key=_due_sort_key, reverse=True)
+        # re-partition: dated first (ascending), undated last
+        dated   = [v for v in filtered if getattr(v, "due_date", None)]
+        undated = [v for v in filtered if not getattr(v, "due_date", None)]
+        dated.sort(key=_due_sort_key)
+        filtered = dated + undated
+    elif sort_by == "Due date (latest)":
+        # undated = date.min → sort descending: dated (latest first), undated last
+        dated   = [v for v in filtered if getattr(v, "due_date", None)]
+        undated = [v for v in filtered if not getattr(v, "due_date", None)]
+        dated.sort(key=_due_sort_key, reverse=True)
+        filtered = dated + undated
 
     st.caption(f"Showing {len(filtered)} of {len(videos)} videos")
 
@@ -1282,6 +1348,33 @@ def page_settings() -> None:
                 mime="application/json",
                 key="dl_json",
             )
+
+    st.divider()
+
+    # ── feat: Collection export ───────────────────────────────────────────────
+    st.markdown("### 📁 Export Collection")
+    st.caption("Generate a focused Markdown study guide scoped to a single collection.")
+    all_colls = storage.get_all_collections()
+    if not all_colls:
+        st.info("📦 No collections yet — create one from the 📁 Collections page.")
+    else:
+        coll_labels  = [f"{c.emoji} {c.name}  ({c.video_count} videos)" for c in all_colls]
+        chosen_label = st.selectbox("Select collection", coll_labels, key="export_coll_select")
+        chosen_coll  = all_colls[coll_labels.index(chosen_label)]
+        if st.button("📝 Generate Collection Export", key="gen_coll_md"):
+            coll_videos = storage.get_videos_in_collection(chosen_coll.id)
+            if not coll_videos:
+                st.warning("⚠️ This collection has no videos yet.")
+            else:
+                md_data = export_markdown_library(coll_videos, collections=[chosen_coll])
+                safe_name = re.sub(r"[^\w\-]", "_", chosen_coll.name)
+                st.download_button(
+                    "📥 Download Collection Markdown",
+                    data=md_data,
+                    file_name=f"collection_{safe_name}.md",
+                    mime="text/markdown",
+                    key="dl_coll_md",
+                )
 
     st.divider()
 
