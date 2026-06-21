@@ -18,6 +18,8 @@ def make_video(
     duration: str = "10:00",
     status: WatchStatus = WatchStatus.SAVED,
     tags: list | None = None,
+    rating: int = 0,
+    due_date: str | None = None,
 ) -> Video:
     return Video(
         video_id=video_id,
@@ -29,6 +31,8 @@ def make_video(
         duration=duration,
         status=status,
         tags=tags or [],
+        rating=rating,
+        due_date=due_date,
     )
 
 
