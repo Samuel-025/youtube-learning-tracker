@@ -101,8 +101,8 @@ class TestWeekGoalEdgeCases:
         """updated_at without tzinfo should not raise; should still count."""
         v = make_video()
         v.watch_progress_sec = 3600
-        # naive ISO string — no timezone info
-        naive_ts = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+        # naive ISO string — no timezone info (use timezone-aware now, strip tzinfo)
+        naive_ts = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%dT%H:%M:%S")
         v.updated_at = naive_ts
         # Should not raise — result value depends on implementation
         result = _week_watched_hours([v])
