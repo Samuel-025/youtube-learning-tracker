@@ -1453,4 +1453,23 @@ def page_settings() -> None:
             st.success(f"✅ Imported: {added} added, {skipped} skipped.")
             st.rerun()
         except (ValueError, KeyError) as exc:
-            st.error(f"❌ Import failed: {e
+            st.error(f"❌ Import failed: {exc}")
+
+
+# ╔══════════════════════════════════════════════════════
+# ║  MAIN NAV
+# ╚══════════════════════════════════════════════════════
+
+PAGES = {
+    "📊 Dashboard":  page_dashboard,
+    "📚 Library":    page_library,
+    "➕ Add Video":  page_add_video,
+    "📁 Collections": page_collections,
+    "⚙️ Settings":   page_settings,
+}
+
+with st.sidebar:
+    st.markdown("## 📺 YT Tracker")
+    page_name = st.radio("Navigate", list(PAGES.keys()), label_visibility="collapsed")
+
+PAGES[page_name]()
