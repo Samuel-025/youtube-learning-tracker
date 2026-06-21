@@ -1021,7 +1021,7 @@ def page_dashboard() -> None:
             except ValueError:
                 return None
 
-        overdue  = [v for v in videos if (d := _safe_date(v)) and d < today]
+        overdue   = [v for v in videos if (d := _safe_date(v)) and d < today]
         due_today = [v for v in videos if (d := _safe_date(v)) and d == today]
         upcoming  = [v for v in videos if (d := _safe_date(v)) and today < d <= week_end]
 
@@ -1383,4 +1383,143 @@ def page_search() -> None:
     st.caption(f"{len(results)} result(s) for **{query}**")
     cols = st.columns(3)
     for i, video in enumerate(results):
-        with c
+        with cols[i % 3]:
+            _render_video_card(video)
+
+
+def page_settings() -> None:
+    st.title("⚙️ Settings")
+
+    # ── Weekly goal ───────────────────────────────────────────────────────────
+    st.markdown("### 🎯 Weekly Watch Goal")
+    current_goal = settings.weekly_goal_hours
+    new_goal = st.number_input(
+        "Hours per week (0 = disabled)",
+        min_value=0.0,
+        max_value=168.0,
+        value=float(current_goal),
+        step=0.5,
+        key="settings_weekly_goal",
+    )
+    if st.button("💾 Save Goal", key="save_goal_btn", type="primary"):
+        settings.weekly_goal_hours = new_goal
+        st.success(f"✅ Weekly goal set to {new_goal:.1f}h." if new_goal > 0 else "✅ Weekly goal disabled.")
+
+    st.divider()
+
+    # ── Export ────────────────────────────────────────────────────────────────
+    st.markdown("### 📤 Export Library")
+    videos = storage.get_all_videos()
+
+    exp_col1, exp_col2, exp_col3 = st.columns(3)
+
+    with exp_col1:
+        st.markdown("**CSV**")
+        if st.button("⬇️ Export CSV", key="export_csv_btn"):
+            csv_text = export_csv(videos)
+            st.download_button(
+                label="📥 Download CSV",
+                data=csv_text,
+                file_name="youtube_tracker_export.csv",
+                mime="text/csv",
+                key="dl_csv",
+            )
+
+    with exp_col2:
+        st.markdown("**Markdown**")
+        if st.button("⬇️ Export Markdown", key="export_md_btn"):
+            md_text = export_markdown_library(videos)
+            st.download_button(
+                label="📥 Download Markdown",
+                data=md_text,
+                file_name="youtube_tracker_library.md",
+                mime="text/markdown",
+                key="dl_md",
+            )
+
+    with exp_col3:
+        st.markdown("**JSON (full backup)**")
+        if st.button("⬇️ Export JSON", key="export_json_btn"):
+            json_text = storage.export_json()
+            st.download_button(
+                label="📥 Download JSON",
+                data=json_text,
+                file_name="youtube_tracker_backup.json",
+                mime="application/json",
+                key="dl_json",
+            )
+
+    st.divider()
+
+    # ── Import ────────────────────────────────────────────────────────────────
+    st.markdown("### 📥 Import Library")
+    st.caption("Import a previously exported JSON backup. Choose merge (add new videos only) or overwrite (replace entire library).")
+    import_file = st.file_uploader("Upload JSON backup", type=["json"], key="import_json_upload")
+    import_mode = st.radio(
+        "Import mode",
+        ["Merge (add new videos only)", "Overwrite (replace entire library)"],
+        key="import_mode_radio",
+        horizontal=True,
+    )
+    if import_file is not None:
+        if st.button("📥 Import", key="import_json_btn", type="primary"):
+            try:
+                raw_json = import_file.read().decode("utf-8")
+                merge = import_mode.startswith("Merge")
+                added, skipped = storage.import_json(raw_json, merge=merge)
+                st.success(f"✅ Import complete — {added} added, {skipped} skipped.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"❌ Import failed: {exc}")
+
+    st.divider()
+
+    # ── Danger zone ───────────────────────────────────────────────────────────
+    st.markdown("### 🗑️ Danger Zone")
+    with st.expander("⚠️ Delete entire library", expanded=False):
+        st.warning("This will permanently delete **all** videos and collections. This cannot be undone.")
+        confirm = st.text_input("Type DELETE to confirm", key="delete_confirm_input")
+        if st.button("🗑️ Delete Everything", key="delete_all_btn", type="primary"):
+            if confirm.strip() == "DELETE":
+                storage.delete_all()
+                st.success("✅ Library cleared.")
+                st.rerun()
+            else:
+                st.error("❌ Type DELETE exactly to confirm.")
+
+
+# ╔══════════════════════════════════════════════════════
+# ║  MAIN
+# ╚══════════════════════════════════════════════════════
+
+def main() -> None:
+    pages = {
+        "📊 Dashboard":   page_dashboard,
+        "📚 Library":     page_library,
+        "➕ Add Video":   page_add_video,
+        "🔍 Search":      page_search,
+        "📁 Collections": page_collections,
+        "⚙️ Settings":    page_settings,
+    }
+
+    with st.sidebar:
+        st.markdown("## 📺 YT Tracker")
+        st.divider()
+        page_name = st.radio(
+            "Navigate",
+            list(pages.keys()),
+            key="page",
+            label_visibility="collapsed",
+        )
+        st.divider()
+        videos = storage.get_all_videos()
+        total     = len(videos)
+        completed = sum(1 for v in videos if v.status == WatchStatus.COMPLETED)
+        watching  = sum(1 for v in videos if v.status == WatchStatus.WATCHING)
+        st.caption(f"📚 {total} videos  ·  ✅ {completed} done  ·  🟡 {watching} watching")
+
+    pages[page_name]()
+
+
+if __name__ == "__main__" or True:
+    main()
