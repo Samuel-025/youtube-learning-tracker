@@ -8,6 +8,26 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
+## [v0.11.2] — 2026-06-21
+
+### Fixed
+- **Dashboard "View" button** (`app/streamlit_app.py`) — the "View" button in the **Recently Added** panel on the Dashboard now correctly switches the active page to `📚 Library` so that `detail_video_id` is honoured and `_render_detail_page()` is actually called. Previously, clicking the button set `detail_video_id` in session state but did not flip the page selector, leaving the user on the Dashboard with no visible change.
+- **Auto-fetch transcript on select** (`app/streamlit_app.py`) — selecting **⚡ Auto-fetch** from the transcript-source dropdown in the Add Video page now immediately triggers the transcript fetch without requiring an extra button click. A session-state flag `auto_fetch_triggered` prevents the fetch from re-firing on every Streamlit rerun.
+- **Settings page Pylance errors** (`app/streamlit_app.py`, `page_settings()`) — three type errors resolved:
+  - `export_json()` returns `dict` — wrapped with `json.dumps()` for the `st.download_button` `data` parameter.
+  - `import_json()` expects `dict` — raw uploaded file string now parsed with `json.loads()` before being passed in.
+  - `storage.delete_all()` does not exist — renamed call to the correct `storage.clear_all_videos()`.
+- **Truncated `page_search()` / missing `page_settings()` and `main()`** (`app/streamlit_app.py`) — completed the previously truncated `page_search()` function body and ensured `page_settings()` and the `main()` entry point were present and correct (line 1386 forward).
+- **Additional Pylance errors** (`app/streamlit_app.py`) — five further type-safety fixes:
+  - Line 549: guard `video.due_date` against `None` before calling `date.fromisoformat()`.
+  - Line 1186: renamed `fetcher.fetch()` → `fetcher.fetch_video()`.
+  - Line 1324: renamed `storage.create_collection()` → `storage.save_collection()`.
+  - Line 1444: wrapped `storage.export_json()` dict result with `json.dumps()` for the download button.
+  - Line 1463: parse the imported file's string content with `json.loads()` before calling `import_json()`.
+- **Unclosed list comprehension** (`app/streamlit_app.py` line 1095) — closed the open list comprehension in the search filter that caused a `SyntaxError` at startup.
+
+---
+
 ## [v0.11.1] — 2026-06-21
 
 ### Fixed
@@ -61,7 +81,7 @@ All notable changes to YouTube Learning Tracker are documented here.
 - **Settings — Weekly Watch Goal setter** — numeric input in Settings lets users define their weekly hour target; persisted via `SettingsStore`.
 - **`SettingsStore`** (`core/settings_store.py`) — lightweight JSON persistence layer for app-level settings (e.g., weekly goal); no schema migrations required.
 - **`plotly>=5.0.0`** added to `requirements.txt`; charts degrade gracefully with an install hint if the package is absent.
-- **Full test suite** (`tests/`) — `conftest.py` + 5 test modules covering storage, model, transcript linkifier, collections, and bug regressions (B1–B14).
+- **Full test suite** (`tests/`) — `conftest.py` + 5 test modules covering storage, the Video model, transcript timestamp linkifier (incl. XSS escape), collections, full-text search, CSV/Markdown/JSON exporters, `SettingsStore`, due-date classification helpers, and bug regressions (B1–B14).
 
 ### Fixed
 - `_TIMESTAMP_RE` moved from module-level constant into `_linkify_timestamps` as a local compiled pattern so AST-exec test harness passes without a `NameError`.

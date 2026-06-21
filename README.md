@@ -1,6 +1,6 @@
 # 📺 YouTube Learning Tracker
 
-> **v0.11.0** — Save, organise, summarise, track, download, export, rate, and schedule YouTube videos from a clean Streamlit web app running entirely on your local machine.
+> **v0.11.2** — Save, organise, summarise, track, download, export, rate, and schedule YouTube videos from a clean Streamlit web app running entirely on your local machine.
 
 ---
 
@@ -99,6 +99,7 @@ The Dashboard gives you a full picture of your library at a glance.
   - **⏱ Watch Time by Status (horizontal bar)** — total content hours per status
   - **📊 Progress Distribution (stacked bar)** — video counts in four progress bands (0–25%, 25–50%, 50–75%, 75–100%), stacked by status
 - **📅 Due-date badges** — overdue (🔴), due today / soon (🟡), and this-week (🟢) reminders surfaced inline
+- **Recently Added** — quick-access cards for the latest saved videos; **View** button navigates directly to the video's detail page in the Library
 
 > Charts require `plotly>=5.0.0` (included in `requirements.txt`). A friendly install hint appears if the package is missing.
 
