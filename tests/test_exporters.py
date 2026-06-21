@@ -95,7 +95,6 @@ class TestExportCsv:
     def test_progress_pct_is_two_decimal_float(self, sample_video):
         text = export_csv([sample_video])
         row = next(csv.DictReader(io.StringIO(text)))
-        # should be parseable as float and formatted to 2 dp
         pct = row["progress_pct"]
         assert "." in pct
         float(pct)  # must not raise
@@ -244,13 +243,12 @@ class TestStorageImportJson:
     def test_merge_skips_existing_ids(self, storage):
         v1 = make_video(video_id="v1", title="Original")
         storage.save_video(v1)
-        # payload has same ID with different title
         v1_dup = make_video(video_id="v1", title="Should Not Overwrite")
         payload = self._make_payload(v1_dup)
         added_v, _ = storage.import_json(payload, merge=True)
         assert added_v == 0
-        # original title preserved
-        assert storage.get_video("v1").title == "Existing"
+        # fix: assert the title we actually saved, not a copy-paste from a different fixture
+        assert storage.get_video("v1").title == "Original"
 
     def test_merge_returns_correct_counts(self, storage):
         existing = make_video(video_id="v1")

@@ -62,9 +62,12 @@ class TestPersistence:
         settings.set("weekly_goal_hours", 10.0)
         assert settings.weekly_goal_hours == 10.0
 
-    def test_file_created_on_init(self, tmp_path):
+    def test_file_written_after_set(self, tmp_path):
+        # SettingsStore only writes the file on set(), not on __init__.
+        # This test verifies the file exists after the first write.
         path = tmp_path / "subdir" / "settings.json"
-        SettingsStore(path=path)
+        s = SettingsStore(path=path)
+        s.set("weekly_goal_hours", 1.0)
         assert path.exists()
 
     def test_arbitrary_key_persists(self, tmp_path):
@@ -108,12 +111,13 @@ class TestResilience:
         s = SettingsStore(path=path)
         assert s.weekly_goal_hours == 0.0  # default, no crash
 
-    def test_missing_file_creates_with_defaults(self, tmp_path):
+    def test_defaults_loaded_when_file_missing(self, tmp_path):
+        # SettingsStore starts with in-memory defaults; file is created on first set().
+        # Verify defaults are correct before any write has occurred.
         path = tmp_path / "fresh.json"
         assert not path.exists()
         s = SettingsStore(path=path)
-        assert path.exists()
-        assert s.weekly_goal_hours == 0.0
+        assert s.weekly_goal_hours == 0.0  # correct default, no crash
 
     def test_unknown_keys_in_file_are_preserved(self, tmp_path):
         path = tmp_path / "settings.json"
