@@ -30,6 +30,8 @@ class SettingsStore:
                 pass  # corrupt or missing — keep defaults
 
     def _save(self) -> None:
+        # fix #4: re-create parent dir in case it was deleted after __init__
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(
             json.dumps(self._data, indent=2, ensure_ascii=False),
             encoding="utf-8",

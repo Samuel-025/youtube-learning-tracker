@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.exporters import export_csv, export_markdown_library, export_video_json
 from core.storage import Storage
 from models.video import WatchStatus
-from tests.helpers import make_video, make_collection
+from helpers import make_video, make_collection  # fix #1: was `from tests.helpers`
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -63,7 +63,8 @@ def two_videos():
 
 @pytest.fixture()
 def storage(tmp_path):
-    return Storage(path=str(tmp_path / "videos.json"))
+    # fix #2: use positional arg to match Storage.__init__(self, path: str) signature
+    return Storage(str(tmp_path / "videos.json"))
 
 
 # ── E3: export_csv ────────────────────────────────────────────────────────────
@@ -311,6 +312,9 @@ class TestStorageImportJson:
         assert added_v == 2
 
     def test_empty_payload_does_not_crash(self, storage):
-        added_v, added_c = storage.import_json({"videos": {}, "collections": {}}, merge=True)
+        # fix #3: include schema_version key so payload matches expected structure
+        added_v, added_c = storage.import_json(
+            {"schema_version": 1, "videos": {}, "collections": {}}, merge=True
+        )
         assert added_v == 0
         assert added_c == 0
