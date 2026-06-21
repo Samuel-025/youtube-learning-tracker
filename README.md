@@ -1,6 +1,6 @@
 # 📺 YouTube Learning Tracker
 
-> **v0.9.0** — Save, organise, summarise, track, and download YouTube videos from a clean Streamlit web app running entirely on your local machine.
+> **v0.11.0** — Save, organise, summarise, track, download, export, rate, and schedule YouTube videos from a clean Streamlit web app running entirely on your local machine.
 
 ---
 
@@ -16,6 +16,8 @@
 | ⏱️ Watch Progress | Slider + quick-set buttons to track how far through each video you are |
 | 📊 Dashboard Insight Charts | Three interactive Plotly charts — status donut, watch-time bar, progress distribution |
 | 🎯 Weekly Watch Goal | ISO-week progress bar on the Dashboard; set your hourly goal in Settings |
+| ⭐ Star Rating | Rate any video 1–5 stars (0 = unrated); shown on cards, detail view, and Markdown export |
+| 📅 Watch Reminders | Set an optional due date per video; dashboard badges flag overdue / due-soon / this-week |
 | 🤖 AI Summary | Bullet-point summary + paragraph overview generated from the transcript |
 | 🗒️ Notes | Auto-generated notes + your own manual notes per video |
 | 📥 Export Study Guide | Download a portable `.md` file with title, tags, summary, takeaways, and notes |
@@ -23,7 +25,10 @@
 | 🔗 Clickable timestamps | Transcript tab toggle converts every `MM:SS` to a YouTube deep-link that opens the exact moment |
 | ⬇️ Download | Save as **MP3** (audio) or **MP4** (720p / 1080p / best) using yt-dlp + FFmpeg |
 | 🔍 Search | Full-text search across titles, channels, notes, summaries, and auto-notes |
-| ⚙️ Settings | yt-dlp updater, weekly goal setter, and app-level preferences persisted via `SettingsStore` |
+| 📤 Export Library | Export full library as **JSON** (backup/restore), **CSV** (spreadsheet), or **Markdown** (readable report) |
+| 📥 Import JSON | Restore from a backup — **Merge** (add missing) or **Overwrite** (full replace) modes |
+| 📄 Per-video JSON | Export any single video's full record as a standalone `.json` file |
+| ⚙️ Settings | yt-dlp updater, weekly goal setter, export / import panel, and app-level preferences |
 
 ---
 
@@ -93,6 +98,7 @@ The Dashboard gives you a full picture of your library at a glance.
   - **🍩 Library by Status (donut)** — proportion of videos in each status with percent labels
   - **⏱ Watch Time by Status (horizontal bar)** — total content hours per status
   - **📊 Progress Distribution (stacked bar)** — video counts in four progress bands (0–25%, 25–50%, 50–75%, 75–100%), stacked by status
+- **📅 Due-date badges** — overdue (🔴), due today / soon (🟡), and this-week (🟢) reminders surfaced inline
 
 > Charts require `plotly>=5.0.0` (included in `requirements.txt`). A friendly install hint appears if the package is missing.
 
@@ -105,6 +111,44 @@ The Dashboard gives you a full picture of your library at a glance.
 - When the goal is met you get a 🏆 success banner
 - If no goal is set, the widget shows a soft nudge with your raw watched hours for the week
 - Goal is persisted locally in `data/settings.json` via `SettingsStore`
+
+---
+
+## ⭐ Star Rating
+
+- Rate any video **1–5 stars** from its detail page (0 = unrated)
+- Rating is shown as ⭐ stars on Library cards, in the video detail header, and in Markdown library exports
+- Exported as a numeric `rating` column in CSV
+- Stored on the `Video` model; clamped to 0–5 automatically
+
+---
+
+## 📅 Watch Reminders / Due Dates
+
+- Set an optional **due date** (YYYY-MM-DD) on any video's detail page
+- The `core/due_date.py` module classifies urgency automatically:
+  - 🔴 **Overdue** — past due date
+  - 🟡 **Due today** / **Due soon** — within 2 days
+  - 🟢 **This week** — 3–7 days away
+- Badges appear on the Dashboard and video cards
+- Due date is exported in both CSV and Markdown library exports
+
+---
+
+## 📤 Export & Import
+
+All export / import controls live in **⚙️ Settings**.
+
+| Action | Format | Notes |
+|---|---|---|
+| ⬇️ Export JSON | `.json` | Full backup — all videos, notes, progress, tags, collections. Timestamped filename. |
+| ⬆️ Import JSON (Merge) | `.json` | Adds only IDs not already present — safe top-up from another machine. |
+| ⬆️ Import JSON (Overwrite) | `.json` | Full restore — replaces the entire library. Schema version check runs first. |
+| ⬇️ Export CSV | `.csv` | 18-column spreadsheet: id, title, channel, url, status, progress, duration, tags, dates, notes, summary, thumbnail, rating, due_date. Tags joined with ` \| `. |
+| ⬇️ Export Markdown | `.md` | Human-readable report grouped by watch status; includes channel, duration, progress, tags, notes, summary, star rating, and due date per video. Collections section lists member titles. |
+| ⬇️ Export this video | `.json` | Per-video record from the detail page — metadata, transcript, summary, notes, progress, tags. Compatible with JSON Import. |
+
+> Export functions live in `core/exporters.py` — pure Python, no Streamlit dependency; fully callable from CLI and tests.
 
 ---
 
@@ -188,14 +232,16 @@ youtube-learning-tracker/
 ├── core/
 │   ├── __init__.py             # Groq model cascade helper
 │   ├── downloader.py           # yt-dlp wrapper — H.264 MP4 / MP3
+│   ├── due_date.py             # Due-date helpers (days_until, due_status, due_badge)
+│   ├── exporters.py            # Pure export functions: CSV, Markdown, per-video JSON
 │   ├── notes_generator.py      # Auto bullet notes
 │   ├── settings_store.py       # Lightweight JSON settings persistence
-│   ├── storage.py              # JSON persistence (videos + collections)
+│   ├── storage.py              # JSON persistence (videos + collections) + export_json / import_json
 │   ├── summarizer.py           # AI summary + Q&A (Groq / OpenAI)
 │   ├── transcript_extractor.py # yt-dlp subtitle extraction
 │   └── youtube_fetcher.py      # YouTube Data API v3 metadata
 ├── models/
-│   ├── video.py                # Video dataclass + WatchStatus enum
+│   ├── video.py                # Video dataclass + WatchStatus enum (rating, due_date fields)
 │   └── collection.py           # Collection dataclass
 ├── data/
 │   ├── videos.json             # Your saved videos (gitignored)
@@ -206,8 +252,11 @@ youtube-learning-tracker/
 │   ├── conftest.py
 │   ├── helpers.py
 │   ├── test_collection.py
+│   ├── test_due_date.py
+│   ├── test_exporters.py
 │   ├── test_linkify.py
 │   ├── test_search.py
+│   ├── test_settings_store.py
 │   ├── test_storage.py
 │   └── test_video_model.py
 ├── .env.example
@@ -225,7 +274,7 @@ youtube-learning-tracker/
 py -3.11 -m pytest tests/ -v
 ```
 
-The test suite covers storage, the Video model, transcript timestamp linkifier (incl. XSS escape), collections, and search — with shared fixtures in `conftest.py` and `helpers.py`.
+The test suite (10 modules) covers storage, the Video model, transcript timestamp linkifier (incl. XSS escape), collections, full-text search, CSV/Markdown/JSON exporters, `SettingsStore`, due-date classification helpers, and bug regressions (B1–B14). Shared fixtures live in `conftest.py` and `helpers.py`.
 
 ---
 

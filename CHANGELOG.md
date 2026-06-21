@@ -8,6 +8,13 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
+## [v0.11.1] — 2026-06-21
+
+### Fixed
+- **Import error — `SyntaxError: unterminated string literal`** (`app/streamlit_app.py` line 1456) — the `except` block in the JSON import handler used the variable name `e` inside the f-string error message, but the exception was bound to `exc`. The missing closing `}` and `"` additionally caused Python to report an unterminated string. Fixed to `st.error(f"❌ Import failed: {exc}")`.
+
+---
+
 ## [v0.11.0] — 2026-06-21
 
 ### Added
