@@ -413,7 +413,7 @@ def _linkify_timestamps(text: str, video_id: str) -> str:
     _TS_RE = re.compile(r"\b(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\b")
 
     _ESC = {"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;"}
-    safe = re.sub(r'[&<>"\'`]', lambda m: _ESC.get(m.group(0), m.group(0)), text)
+    safe = re.sub(r'[&<>"\'\'`]', lambda m: _ESC.get(m.group(0), m.group(0)), text)
 
     def _replace(match: re.Match) -> str:
         h, m, s = match.group(1), match.group(2), match.group(3)
@@ -977,6 +977,53 @@ def page_dashboard() -> None:
     if videos:
         st.divider()
         _render_dashboard_charts(videos)
+
+        # ── F1: Top Rated Videos ──────────────────────────────────────────────
+        rated = sorted(
+            [v for v in videos if getattr(v, "rating", 0)],
+            key=lambda v: v.rating,
+            reverse=True,
+        )
+        if rated:
+            st.divider()
+            st.markdown("### ⭐ Top Rated Videos")
+            for v in rated[:5]:
+                stars = "⭐" * v.rating
+                st.markdown(
+                    f"{stars} &nbsp; **{v.title[:65]}** &nbsp; <span style='color:#888;font-size:0.85rem;'>{v.channel}</span>",
+                    unsafe_allow_html=True,
+                )
+
+        # ── F2: Upcoming / Overdue Reminders ─────────────────────────────────
+        today    = date.today()
+        week_end = today + timedelta(days=7)
+
+        def _safe_date(v: Video):
+            dd = getattr(v, "due_date", None)
+            if not dd:
+                return None
+            try:
+                return date.fromisoformat(dd)
+            except ValueError:
+                return None
+
+        overdue  = [v for v in videos if (d := _safe_date(v)) and d < today]
+        due_today = [v for v in videos if (d := _safe_date(v)) and d == today]
+        upcoming  = [v for v in videos if (d := _safe_date(v)) and today < d <= week_end]
+
+        if overdue or due_today or upcoming:
+            st.divider()
+            st.markdown("### 📅 Watch Reminders")
+            if overdue:
+                titles = ", ".join(f"`{v.title[:40]}`" for v in overdue[:3])
+                suffix = f" (+{len(overdue) - 3} more)" if len(overdue) > 3 else ""
+                st.error(f"🚨 **{len(overdue)} overdue:** {titles}{suffix}")
+            if due_today:
+                titles = ", ".join(f"`{v.title[:40]}`" for v in due_today)
+                st.warning(f"⏰ **Due today:** {titles}")
+            if upcoming:
+                titles = ", ".join(f"`{v.title[:40]}`" for v in upcoming[:5])
+                st.info(f"📆 **Due this week:** {titles}")
     else:
         st.info("📭 No videos yet. Add some from ➕ Add Video.")
 
@@ -1089,6 +1136,20 @@ def page_library() -> None:
         filtered = dated + undated
 
     st.caption(f"Showing {len(filtered)} of {len(videos)} videos")
+
+    # ── F2: overdue / due-today banner above the grid ────────────────────────
+    overdue_count = sum(
+        1 for v in filtered
+        if getattr(v, "due_date", None) and date.fromisoformat(v.due_date) < today
+    )
+    today_count = sum(
+        1 for v in filtered
+        if getattr(v, "due_date", None) and date.fromisoformat(v.due_date) == today
+    )
+    if overdue_count:
+        st.error(f"🚨 {overdue_count} video(s) in this view are **overdue**.")
+    if today_count:
+        st.warning(f"⏰ {today_count} video(s) are **due today**.")
 
     if not filtered:
         st.warning("No videos match your filters.")
@@ -1392,39 +1453,4 @@ def page_settings() -> None:
             st.success(f"✅ Imported: {added} added, {skipped} skipped.")
             st.rerun()
         except (ValueError, KeyError) as exc:
-            st.error(f"❌ Import failed: {exc}")
-
-    st.divider()
-
-    # ── Danger zone ───────────────────────────────────────────────────────────
-    st.markdown("### 🗑️ Danger Zone")
-    with st.expander("⚠️ Delete all videos", expanded=False):
-        st.warning("This will permanently delete ALL videos from your library. This cannot be undone.")
-        confirm = st.text_input("Type DELETE to confirm", key="delete_confirm")
-        if st.button("🗑️ Delete All Videos", type="secondary", key="delete_all_btn"):
-            if confirm == "DELETE":
-                for v in storage.get_all_videos():
-                    storage.delete_video(v.video_id)
-                st.success("✅ All videos deleted.")
-                st.rerun()
-            else:
-                st.error("❌ Type DELETE to confirm.")
-
-
-# ╔══════════════════════════════════════════════════════
-# ║  MAIN NAV
-# ╚══════════════════════════════════════════════════════
-
-PAGES = {
-    "📊 Dashboard":   page_dashboard,
-    "📚 Library":     page_library,
-    "➕ Add Video":   page_add_video,
-    "📁 Collections": page_collections,
-    "⚙️ Settings":    page_settings,
-}
-
-with st.sidebar:
-    st.markdown("## 📺 YT Tracker")
-    page = st.radio("Navigate", list(PAGES.keys()), key="nav_page", label_visibility="collapsed")
-
-PAGES[page]()
+            st.error(f"❌ Import failed: {e
