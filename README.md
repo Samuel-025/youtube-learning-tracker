@@ -1,6 +1,6 @@
 # 📺 YouTube Learning Tracker
 
-> **v0.8.0** — Save, organise, summarise, track, and download YouTube videos from a clean Streamlit web app running entirely on your local machine.
+> **v0.9.0** — Save, organise, summarise, track, and download YouTube videos from a clean Streamlit web app running entirely on your local machine.
 
 ---
 
@@ -14,6 +14,8 @@
 | 🏷️ Tag filtering | Multiselect tag chips in the Library — AND logic across all selected tags |
 | 📁 Collections | Group videos into named, emoji-tagged playlists with per-collection progress bars |
 | ⏱️ Watch Progress | Slider + quick-set buttons to track how far through each video you are |
+| 📊 Dashboard Insight Charts | Three interactive Plotly charts — status donut, watch-time bar, progress distribution |
+| 🎯 Weekly Watch Goal | ISO-week progress bar on the Dashboard; set your hourly goal in Settings |
 | 🤖 AI Summary | Bullet-point summary + paragraph overview generated from the transcript |
 | 🗒️ Notes | Auto-generated notes + your own manual notes per video |
 | 📥 Export Study Guide | Download a portable `.md` file with title, tags, summary, takeaways, and notes |
@@ -21,8 +23,7 @@
 | 🔗 Clickable timestamps | Transcript tab toggle converts every `MM:SS` to a YouTube deep-link that opens the exact moment |
 | ⬇️ Download | Save as **MP3** (audio) or **MP4** (720p / 1080p / best) using yt-dlp + FFmpeg |
 | 🔍 Search | Full-text search across titles, channels, notes, summaries, and auto-notes |
-| 📊 Dashboard | At-a-glance counts + overall watch-progress bar across your whole library |
-| ⚙️ Settings | One-click **yt-dlp updater** to fix YouTube signature / JS-challenge errors |
+| ⚙️ Settings | yt-dlp updater, weekly goal setter, and app-level preferences persisted via `SettingsStore` |
 
 ---
 
@@ -78,6 +79,32 @@ py -3.11 -m pip install -r requirements.txt
 # Also update yt-dlp (YouTube changes its protection frequently):
 py -3.11 -m pip install -U yt-dlp
 ```
+
+---
+
+## 📊 Dashboard
+
+The Dashboard gives you a full picture of your library at a glance.
+
+- **Counts panel** — total videos broken down by watch status (Unwatched / Watching / Completed)
+- **Overall progress bar** — percentage of total library duration watched
+- **🎯 Weekly Watch Goal** — ISO-week progress bar showing hours watched vs. your goal; set your target in ⚙️ Settings
+- **📈 Insights** — three interactive Plotly charts:
+  - **🍩 Library by Status (donut)** — proportion of videos in each status with percent labels
+  - **⏱ Watch Time by Status (horizontal bar)** — total content hours per status
+  - **📊 Progress Distribution (stacked bar)** — video counts in four progress bands (0–25%, 25–50%, 50–75%, 75–100%), stacked by status
+
+> Charts require `plotly>=5.0.0` (included in `requirements.txt`). A friendly install hint appears if the package is missing.
+
+---
+
+## 🎯 Weekly Watch Goal
+
+- Go to **⚙️ Settings → Weekly Watch Goal** and enter your target hours per week
+- The Dashboard shows a progress bar for the current ISO week with watched hours, remaining hours, and your goal
+- When the goal is met you get a 🏆 success banner
+- If no goal is set, the widget shows a soft nudge with your raw watched hours for the week
+- Goal is persisted locally in `data/settings.json` via `SettingsStore`
 
 ---
 
@@ -157,29 +184,48 @@ ffmpeg -version  # verify
 ```
 youtube-learning-tracker/
 ├── app/
-│   └── streamlit_app.py       # Main web UI (all pages)
+│   └── streamlit_app.py        # Main web UI (all pages)
 ├── core/
-│   ├── __init__.py            # Groq model cascade helper
-│   ├── downloader.py          # yt-dlp wrapper — H.264 MP4 / MP3
-│   ├── notes_generator.py     # Auto bullet notes
-│   ├── storage.py             # JSON persistence (videos + collections)
-│   ├── summarizer.py          # AI summary + Q&A (Groq / OpenAI)
-│   ├── transcript_extractor.py# yt-dlp subtitle extraction
-│   └── youtube_fetcher.py     # YouTube Data API v3 metadata
+│   ├── __init__.py             # Groq model cascade helper
+│   ├── downloader.py           # yt-dlp wrapper — H.264 MP4 / MP3
+│   ├── notes_generator.py      # Auto bullet notes
+│   ├── settings_store.py       # Lightweight JSON settings persistence
+│   ├── storage.py              # JSON persistence (videos + collections)
+│   ├── summarizer.py           # AI summary + Q&A (Groq / OpenAI)
+│   ├── transcript_extractor.py # yt-dlp subtitle extraction
+│   └── youtube_fetcher.py      # YouTube Data API v3 metadata
 ├── models/
-│   ├── video.py               # Video dataclass + WatchStatus enum
-│   └── collection.py          # Collection dataclass
+│   ├── video.py                # Video dataclass + WatchStatus enum
+│   └── collection.py           # Collection dataclass
 ├── data/
-│   ├── videos.json            # Your saved videos (gitignored)
-│   └── collections.json       # Your collections (gitignored)
-├── downloads/                 # Downloaded media files (gitignored)
+│   ├── videos.json             # Your saved videos (gitignored)
+│   ├── collections.json        # Your collections (gitignored)
+│   └── settings.json           # App-level settings — weekly goal etc. (gitignored)
+├── downloads/                  # Downloaded media files (gitignored)
 ├── tests/
+│   ├── conftest.py
+│   ├── helpers.py
+│   ├── test_collection.py
+│   ├── test_linkify.py
+│   ├── test_search.py
+│   ├── test_storage.py
+│   └── test_video_model.py
 ├── .env.example
 ├── CHANGELOG.md
 ├── requirements.txt
 ├── run.bat
 └── run.ps1
 ```
+
+---
+
+## 🧪 Running Tests
+
+```powershell
+py -3.11 -m pytest tests/ -v
+```
+
+The test suite covers storage, the Video model, transcript timestamp linkifier (incl. XSS escape), collections, and search — with shared fixtures in `conftest.py` and `helpers.py`.
 
 ---
 
@@ -226,6 +272,12 @@ Some videos disable transcripts. Use the **Paste** or **Upload** option in the T
 ### AI summary fails
 
 Check your `.env` — ensure `GROQ_API_KEY` or `OPENAI_API_KEY` is set and `AI_PROVIDER` matches.
+
+### Insight charts not showing
+
+```powershell
+py -3.11 -m pip install plotly
+```
 
 ---
 
