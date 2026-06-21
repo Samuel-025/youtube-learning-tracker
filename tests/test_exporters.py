@@ -6,6 +6,8 @@ Covers:
   E5 — export_video_json
   E1 — Storage.export_json
   E2 — Storage.import_json (merge + overwrite)
+
+v0.11.0 additions: rating + due_date columns in CSV and Markdown.
 """
 
 from __future__ import annotations
@@ -18,7 +20,6 @@ import sys
 
 import pytest
 
-# Ensure project root is on sys.path when running from the tests/ directory
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.exporters import export_csv, export_markdown_library, export_video_json
@@ -38,6 +39,8 @@ def sample_video():
         duration="12:34",
         status=WatchStatus.WATCHING,
         tags=["python", "tutorial"],
+        rating=4,
+        due_date="2026-12-31",
     )
     v.manual_notes = "Great intro\nVery clear"
     v.summary_paragraph = "A solid Python overview."
@@ -53,7 +56,7 @@ def sample_collection():
 @pytest.fixture()
 def two_videos():
     return [
-        make_video(video_id="vid001", title="Alpha", status=WatchStatus.WATCHING, tags=["a", "b"]),
+        make_video(video_id="vid001", title="Alpha", status=WatchStatus.WATCHING, tags=["a", "b"], rating=5),
         make_video(video_id="vid002", title="Beta",  status=WatchStatus.SAVED),
     ]
 
@@ -66,12 +69,12 @@ def storage(tmp_path):
 # ── E3: export_csv ────────────────────────────────────────────────────────────
 
 class TestExportCsv:
-    def test_header_contains_all_16_columns(self, two_videos):
+    def test_header_contains_all_18_columns(self, two_videos):
         text = export_csv(two_videos)
         reader = csv.DictReader(io.StringIO(text))
         expected = {
-            "video_id", "title", "channel", "url", "status", "progress_pct",
-            "watch_progress_sec", "duration_sec", "duration", "tags",
+            "video_id", "title", "channel", "url", "status", "rating", "due_date",
+            "progress_pct", "watch_progress_sec", "duration_sec", "duration", "tags",
             "published_at", "created_at", "updated_at", "manual_notes",
             "summary_paragraph", "thumbnail_url",
         }
@@ -105,7 +108,6 @@ class TestExportCsv:
         assert len(lines) == 1  # only the header row
 
     def test_newlines_in_notes_removed(self, sample_video):
-        """Manual notes with newlines must not break CSV cell boundaries."""
         text = export_csv([sample_video])
         row = next(csv.DictReader(io.StringIO(text)))
         assert "\n" not in row["manual_notes"]
@@ -116,8 +118,31 @@ class TestExportCsv:
         row = next(csv.DictReader(io.StringIO(text)))
         assert row["tags"] == ""
 
+    # F1 + F2 new columns
+    def test_rating_column_present(self, sample_video):
+        text = export_csv([sample_video])
+        row = next(csv.DictReader(io.StringIO(text)))
+        assert row["rating"] == "4"
 
-# ── E4: export_markdown_library ───────────────────────────────────────────────
+    def test_unrated_video_has_zero(self, two_videos):
+        text = export_csv(two_videos)
+        rows = list(csv.DictReader(io.StringIO(text)))
+        beta = next(r for r in rows if r["title"] == "Beta")
+        assert beta["rating"] == "0"
+
+    def test_due_date_column_present(self, sample_video):
+        text = export_csv([sample_video])
+        row = next(csv.DictReader(io.StringIO(text)))
+        assert row["due_date"] == "2026-12-31"
+
+    def test_no_due_date_produces_empty_string(self):
+        v = make_video()
+        text = export_csv([v])
+        row = next(csv.DictReader(io.StringIO(text)))
+        assert row["due_date"] == ""
+
+
+# ── E4: export_markdown_library ──────────────────────────────────────────────
 
 class TestExportMarkdownLibrary:
     def test_starts_with_h1(self, two_videos):
@@ -158,7 +183,18 @@ class TestExportMarkdownLibrary:
         v = make_video()
         v.summary_paragraph = "x" * 400
         md = export_markdown_library([v])
-        assert "\u2026" in md  # ellipsis appended when > 300 chars
+        assert "\u2026" in md
+
+    def test_rating_stars_in_markdown(self):
+        v = make_video(rating=3)
+        md = export_markdown_library([v])
+        assert "⭐⭐⭐" in md
+
+    def test_due_date_in_markdown(self):
+        v = make_video(due_date="2026-09-01")
+        md = export_markdown_library([v])
+        assert "2026-09-01" in md
+        assert "📅" in md
 
 
 # ── E5: export_video_json ─────────────────────────────────────────────────────
@@ -166,7 +202,7 @@ class TestExportMarkdownLibrary:
 class TestExportVideoJson:
     def test_valid_json(self, sample_video):
         text = export_video_json(sample_video)
-        payload = json.loads(text)  # must not raise
+        payload = json.loads(text)
         assert isinstance(payload, dict)
 
     def test_schema_version_is_1(self, sample_video):
@@ -190,7 +226,7 @@ class TestExportVideoJson:
 
     def test_output_is_pretty_printed(self, sample_video):
         text = export_video_json(sample_video)
-        assert "\n" in text  # indent=2 adds newlines
+        assert "\n" in text
 
 
 # ── E1: Storage.export_json ───────────────────────────────────────────────────
@@ -224,7 +260,6 @@ class TestStorageExportJson:
 
 class TestStorageImportJson:
     def _make_payload(self, *videos):
-        """Build a minimal import payload from Video objects."""
         return {
             "schema_version": 1,
             "videos":        {v.video_id: v.to_dict() for v in videos},
@@ -247,7 +282,6 @@ class TestStorageImportJson:
         payload = self._make_payload(v1_dup)
         added_v, _ = storage.import_json(payload, merge=True)
         assert added_v == 0
-        # fix: assert the title we actually saved, not a copy-paste from a different fixture
         assert storage.get_video("v1").title == "Original"
 
     def test_merge_returns_correct_counts(self, storage):
@@ -257,7 +291,7 @@ class TestStorageImportJson:
         new2 = make_video(video_id="v3")
         payload = self._make_payload(existing, new1, new2)
         added_v, added_c = storage.import_json(payload, merge=True)
-        assert added_v == 2  # v2 + v3; v1 skipped
+        assert added_v == 2
         assert added_c == 0
 
     def test_overwrite_replaces_entire_library(self, storage):

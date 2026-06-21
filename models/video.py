@@ -74,7 +74,11 @@ class Video:
     # ── Watch progress ───────────────────────────────────────────────
     watch_progress_sec:   int          = 0    # seconds watched so far
     duration_sec:         int          = 0    # total seconds (parsed from `duration`)
-    # ────────────────────────────────────────────────
+    # ── F1: Rating (v0.11.0) ─────────────────────────────────────────
+    rating:               int          = 0    # 0 = unrated, 1–5 stars
+    # ── F2: Watch Reminder / Due Date (v0.11.0) ──────────────────────
+    due_date:             str | None   = None  # YYYY-MM-DD or None
+    # ────────────────────────────────────────────────────────────────
     created_at:           str          = field(default_factory=lambda: datetime.now().isoformat())
     updated_at:           str          = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -89,6 +93,11 @@ class Video:
         # Normalise legacy empty-string sentinel from old JSON files
         if self.local_path == "":
             self.local_path = None
+        # Clamp rating to valid range 0–5
+        self.rating = max(0, min(5, int(self.rating or 0)))
+        # Normalise empty-string due_date to None
+        if self.due_date == "":
+            self.due_date = None
 
     @property
     def progress_pct(self) -> float:

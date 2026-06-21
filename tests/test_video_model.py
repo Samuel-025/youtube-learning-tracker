@@ -89,6 +89,68 @@ class TestProgressPct:
 
 
 # ---------------------------------------------------------------------------
+# F1: Rating field (v0.11.0)
+# ---------------------------------------------------------------------------
+
+class TestRating:
+    def test_default_rating_is_zero(self):
+        v = make_video()
+        assert v.rating == 0
+
+    def test_valid_rating_preserved(self):
+        v = make_video(rating=4)
+        assert v.rating == 4
+
+    def test_rating_clamped_above_5(self):
+        v = make_video(rating=99)
+        assert v.rating == 5
+
+    def test_rating_clamped_below_0(self):
+        v = make_video(rating=-3)
+        assert v.rating == 0
+
+    def test_rating_survives_roundtrip(self):
+        v = make_video(rating=3)
+        v2 = Video.from_dict(v.to_dict())
+        assert v2.rating == 3
+
+    def test_missing_rating_falls_back_to_zero(self):
+        d = make_video().to_dict()
+        del d["rating"]
+        v2 = Video.from_dict(d)
+        assert v2.rating == 0
+
+
+# ---------------------------------------------------------------------------
+# F2: Due date field (v0.11.0)
+# ---------------------------------------------------------------------------
+
+class TestDueDate:
+    def test_default_due_date_is_none(self):
+        v = make_video()
+        assert v.due_date is None
+
+    def test_due_date_string_preserved(self):
+        v = make_video(due_date="2026-12-31")
+        assert v.due_date == "2026-12-31"
+
+    def test_empty_string_normalised_to_none(self):
+        v = make_video(due_date="")
+        assert v.due_date is None
+
+    def test_due_date_survives_roundtrip(self):
+        v = make_video(due_date="2026-07-01")
+        v2 = Video.from_dict(v.to_dict())
+        assert v2.due_date == "2026-07-01"
+
+    def test_missing_due_date_falls_back_to_none(self):
+        d = make_video().to_dict()
+        del d["due_date"]
+        v2 = Video.from_dict(d)
+        assert v2.due_date is None
+
+
+# ---------------------------------------------------------------------------
 # to_dict / from_dict round-trip
 # ---------------------------------------------------------------------------
 

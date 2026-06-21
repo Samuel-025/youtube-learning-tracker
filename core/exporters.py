@@ -6,6 +6,8 @@ streamlit_app.py, cli.py, or tests without side-effects.
 E3 — export_csv(videos)            -> str   (UTF-8 CSV text)
 E4 — export_markdown_library(videos, collections) -> str   (Markdown text)
 E5 — export_video_json(video)      -> str   (JSON text, single video)
+
+v0.11.0: added 'rating' and 'due_date' columns to CSV + Markdown.
 """
 
 from __future__ import annotations
@@ -29,6 +31,8 @@ _CSV_FIELDS = [
     "channel",
     "url",
     "status",
+    "rating",
+    "due_date",
     "progress_pct",
     "watch_progress_sec",
     "duration_sec",
@@ -66,6 +70,8 @@ def export_csv(videos: list["Video"]) -> str:
             "channel":            v.channel,
             "url":                v.url,
             "status":             v.status.value,
+            "rating":             v.rating,
+            "due_date":           v.due_date or "",
             "progress_pct":       f"{v.progress_pct:.2f}",
             "watch_progress_sec": v.watch_progress_sec,
             "duration_sec":       v.duration_sec,
@@ -110,7 +116,8 @@ def export_markdown_library(
         ## Videos by Status
         ### ▶️ Watching  (N)
         #### Title
-        - Channel | Duration | Progress | Tags
+        - Channel | Duration | Progress | Rating | Tags
+        - Due: <date> (if set)
         - Notes (if any)
         - Summary (if any)
 
@@ -162,8 +169,15 @@ def export_markdown_library(
             dur = v.duration or "unknown"
             pct = f"{v.progress_pct:.0f}%" if v.duration_sec else "—"
             tags_str = " · ".join(f"`{t}`" for t in (v.tags or [])) or "—"
-            lines.append(f"- **Channel:** {v.channel}  |  **Duration:** {dur}  |  **Progress:** {pct}  |  **Tags:** {tags_str}")
+            stars = ("⭐" * v.rating) if v.rating else "—"
+            lines.append(
+                f"- **Channel:** {v.channel}  |  **Duration:** {dur}  |  "
+                f"**Progress:** {pct}  |  **Rating:** {stars}  |  **Tags:** {tags_str}"
+            )
             lines.append(f"- **URL:** {v.url}")
+
+            if v.due_date:
+                lines.append(f"- 📅 **Due:** {v.due_date}")
 
             if v.manual_notes and v.manual_notes.strip():
                 lines.append("- **Notes:**")
