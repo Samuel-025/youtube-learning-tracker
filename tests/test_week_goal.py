@@ -2,57 +2,21 @@
 
 The helper sums watch_progress_sec only for videos whose updated_at
 falls within the current ISO week (Mon 00:00 → Sun 23:59:59 UTC).
+
+Imports directly from core.ui_helpers — no Streamlit stub needed.
 """
 
 from __future__ import annotations
 
 import os
 import sys
-import types
 from datetime import datetime, timedelta, timezone
 
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# ── Minimal Streamlit stub ────────────────────────────────────────────────────
-_st = types.ModuleType("streamlit")
-for _attr in (
-    "set_page_config", "title", "caption", "markdown", "info", "success",
-    "warning", "error", "divider", "progress", "metric", "balloons",
-    "spinner", "rerun", "button", "selectbox", "text_input", "text_area",
-    "slider", "columns", "container", "image", "radio", "checkbox",
-    "date_input", "file_uploader", "download_button", "expander",
-    "tabs", "video", "sidebar",
-):
-    setattr(_st, _attr, lambda *a, **kw: None)
-_st.session_state = {}
-_st.cache_data = lambda f=None, **kw: (f if f else lambda g: g)
-for _submod in ("sidebar",):
-    setattr(_st, _submod, types.SimpleNamespace(
-        **{a: (lambda *x, **k: None) for a in ("title", "radio", "markdown", "divider", "caption")}
-    ))
-sys.modules["streamlit"] = _st
-
-for _mod in ("dotenv", "plotly", "plotly.graph_objects"):
-    if _mod not in sys.modules:
-        sys.modules[_mod] = types.ModuleType(_mod)
-sys.modules["dotenv"].load_dotenv = lambda *a, **kw: None  # type: ignore[attr-defined]
-
-import importlib.util, pathlib
-_spec = importlib.util.spec_from_file_location(
-    "streamlit_app",
-    pathlib.Path(__file__).resolve().parent.parent / "app" / "streamlit_app.py",
-)
-_app = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
-try:
-    _spec.loader.exec_module(_app)  # type: ignore[union-attr]
-except Exception:
-    pass
-
-_week_watched_hours  = _app._week_watched_hours   # type: ignore[attr-defined]
-_current_week_bounds = _app._current_week_bounds  # type: ignore[attr-defined]
-
+from core.ui_helpers import _week_watched_hours, _current_week_bounds
 from helpers import make_video
 
 
@@ -62,7 +26,7 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _video_updated(seconds_ago: int = 0, progress_sec: int = 3600) -> object:
+def _video_updated(seconds_ago: int = 0, progress_sec: int = 3600):
     """Return a video updated `seconds_ago` seconds before now."""
     v = make_video()
     v.watch_progress_sec = progress_sec
@@ -158,8 +122,8 @@ class TestWeekGoalEdgeCases:
 
     def test_mixed_in_and_out_of_window(self):
         """Only this-week videos are summed; last-week ones are ignored."""
-        in_window  = _video_updated(seconds_ago=3600,     progress_sec=3600)  # 1 h
-        out_window = _video_updated(seconds_ago=8 * 86400, progress_sec=3600) # last week
+        in_window  = _video_updated(seconds_ago=3600,      progress_sec=3600)  # 1 h
+        out_window = _video_updated(seconds_ago=8 * 86400, progress_sec=3600)  # last week
         result = _week_watched_hours([in_window, out_window])
         assert abs(result - 1.0) < 0.01
 
