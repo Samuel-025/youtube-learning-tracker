@@ -1094,4 +1094,446 @@ def page_library() -> None:
         q = search_q.strip().lower()
         filtered = [
             v for v in filtered
-            if
+            if q in v.title.lower() or q in v.channel.lower() or any(q in t.lower() for t in v.tags)
+        ]
+
+    # ── Due date filter ───────────────────────────────────────────────────────
+    if due_filter != "All":
+        today = date.today()
+        week_end = today + timedelta(days=7)
+
+        def _safe_due(v: Video):
+            dd = getattr(v, "due_date", None)
+            if not dd:
+                return None
+            try:
+                return date.fromisoformat(dd)
+            except ValueError:
+                return None
+
+        if due_filter == "Overdue":
+            filtered = [v for v in filtered if (d := _safe_due(v)) and d < today]
+        elif due_filter == "Due today":
+            filtered = [v for v in filtered if (d := _safe_due(v)) and d == today]
+        elif due_filter == "Due this week":
+            filtered = [v for v in filtered if (d := _safe_due(v)) and today <= d <= week_end]
+        elif due_filter == "Has due date":
+            filtered = [v for v in filtered if _safe_due(v) is not None]
+        elif due_filter == "No due date":
+            filtered = [v for v in filtered if _safe_due(v) is None]
+
+    # ── Sorting ───────────────────────────────────────────────────────────────
+    def _due_sort_key(v: Video):
+        dd = getattr(v, "due_date", None)
+        if not dd:
+            return date.max
+        try:
+            return date.fromisoformat(dd)
+        except ValueError:
+            return date.max
+
+    if sort_by == "Date added (newest)":
+        filtered.sort(key=lambda v: v.created_at or "", reverse=True)
+    elif sort_by == "Date added (oldest)":
+        filtered.sort(key=lambda v: v.created_at or "")
+    elif sort_by == "Title A→Z":
+        filtered.sort(key=lambda v: v.title.lower())
+    elif sort_by == "Title Z→A":
+        filtered.sort(key=lambda v: v.title.lower(), reverse=True)
+    elif sort_by == "Progress ↑":
+        filtered.sort(key=lambda v: v.progress_pct)
+    elif sort_by == "Progress ↓":
+        filtered.sort(key=lambda v: v.progress_pct, reverse=True)
+    elif sort_by == "Rating ↑":
+        filtered.sort(key=lambda v: getattr(v, "rating", 0) or 0)
+    elif sort_by == "Rating ↓":
+        filtered.sort(key=lambda v: getattr(v, "rating", 0) or 0, reverse=True)
+    elif sort_by == "Due date (soonest)":
+        filtered.sort(key=_due_sort_key)
+    elif sort_by == "Due date (latest)":
+        filtered.sort(key=_due_sort_key, reverse=True)
+
+    st.caption(f"Showing {len(filtered)} of {len(videos)} videos")
+
+    if not filtered:
+        st.info("🔍 No videos match the current filters.")
+        return
+
+    cols = st.columns(3)
+    for i, video in enumerate(filtered):
+        with cols[i % 3]:
+            _render_video_card(video)
+
+
+def page_add_video() -> None:
+    st.title("➕ Add Video")
+
+    pending: Video | None = st.session_state.get("pending_video")
+    transcript_done: bool = st.session_state.get("pending_transcript_done", False)
+
+    if transcript_done and pending is None:
+        st.session_state.pop("pending_transcript_done", None)
+
+    if pending is None:
+        st.markdown("### 🔗 Enter YouTube URL")
+        url_input = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...", label_visibility="collapsed")
+
+        col_fetch, col_manual = st.columns([1, 1])
+        with col_fetch:
+            if st.button("🔍 Fetch Metadata", type="primary", disabled=not url_input.strip()):
+                with st.spinner("Fetching video info..."):
+                    try:
+                        video = fetcher.fetch(url_input.strip())
+                        st.session_state["pending_video"] = video
+                        st.session_state.pop("pending_transcript_done", None)
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"❌ Could not fetch: {exc}")
+        with col_manual:
+            if st.button("✏️ Add Manually"):
+                video = Video(
+                    video_id=f"manual_{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                    title="Untitled Video",
+                    channel="Unknown",
+                    url=url_input.strip() or "https://youtube.com",
+                    thumbnail_url="",
+                    duration="",
+                    duration_sec=0,
+                    published_at="",
+                    transcript_text="",
+                    transcript_source="",
+                    summary_bullets=[],
+                    summary_paragraph="",
+                    auto_notes=[],
+                    manual_notes="",
+                    tags=[],
+                    status=WatchStatus.SAVED,
+                )
+                st.session_state["pending_video"] = video
+                st.session_state.pop("pending_transcript_done", None)
+                st.rerun()
+        return
+
+    # ── Metadata editing ──────────────────────────────────────────────────────
+    video = pending
+    vid   = video.video_id
+
+    st.markdown("### ✏️ Review & Edit Metadata")
+    col_thumb, col_meta = st.columns([1, 2])
+    with col_thumb:
+        if video.thumbnail_url:
+            st.image(video.thumbnail_url, width="stretch")
+
+    with col_meta:
+        video.title   = st.text_input("Title",   value=video.title,   key="add_title")
+        video.channel = st.text_input("Channel", value=video.channel, key="add_channel")
+        video.url     = st.text_input("URL",     value=video.url,     key="add_url")
+        tags_str = st.text_input("Tags (comma-separated)", value=", ".join(video.tags), key="add_tags")
+        video.tags = [t.strip() for t in tags_str.split(",") if t.strip()]
+
+        status_options = [s.value for s in WatchStatus]
+        chosen = st.selectbox(
+            "Status", options=status_options,
+            index=status_options.index(video.status.value),
+            key="add_status",
+            format_func=lambda s: f"{STATUS_COLORS.get(s, '⚪')} {s.capitalize()}",
+        )
+        video.status = WatchStatus(chosen)
+
+    st.divider()
+    st.markdown("### 📄 Transcript (optional)")
+    transcript_source = st.radio(
+        "Source",
+        ["⚡ Auto-fetch", "✏️ Paste manually", "📁 Upload file", "⏭ Skip"],
+        horizontal=True,
+        key="add_transcript_source",
+    )
+
+    if transcript_source == "⚡ Auto-fetch":
+        if st.button("⚡ Fetch Transcript", type="primary"):
+            with st.spinner("Fetching transcript..."):
+                try:
+                    text, source = extractor.extract(video.url)
+                    video.transcript_text   = text
+                    video.transcript_source = source
+                    st.session_state["pending_video"] = video
+                    st.success(f"✅ Transcript fetched ({source})")
+                except Exception as exc:
+                    st.warning(f"⚠️ Could not fetch transcript: {exc}")
+        if video.transcript_text:
+            st.text_area("Preview", value=video.transcript_text[:500] + "…" if len(video.transcript_text) > 500 else video.transcript_text, height=150, disabled=True, key="add_transcript_preview")
+
+    elif transcript_source == "✏️ Paste manually":
+        pasted = st.text_area("Paste transcript here", height=200, key="add_paste")
+        if st.button("✅ Use This Transcript"):
+            if pasted.strip():
+                video.transcript_text   = pasted.strip()
+                video.transcript_source = "manual"
+                st.session_state["pending_video"] = video
+                st.success("✅ Transcript saved.")
+            else:
+                st.warning("⚠️ Paste is empty.")
+
+    elif transcript_source == "📁 Upload file":
+        up = st.file_uploader("Upload .txt transcript", type=["txt"], key="add_upload")
+        if up:
+            raw = up.read().decode("utf-8")
+            if st.button("✅ Use This File"):
+                if raw.strip():
+                    video.transcript_text   = raw.strip()
+                    video.transcript_source = "upload"
+                    st.session_state["pending_video"] = video
+                    st.success("✅ Transcript loaded.")
+                else:
+                    st.warning("⚠️ File is empty.")
+
+    st.divider()
+    col_save, col_cancel = st.columns([1, 1])
+    with col_save:
+        if st.button("💾 Save Video", type="primary"):
+            if video.transcript_text:
+                _finish_add_video(video)
+            else:
+                storage.save_video(video)
+                st.session_state.pop("pending_video", None)
+                st.balloons()
+                st.success("✅ Video saved (no transcript).")
+    with col_cancel:
+        if st.button("🗑️ Cancel"):
+            st.session_state.pop("pending_video", None)
+            st.session_state.pop("pending_transcript_done", None)
+            st.rerun()
+
+
+def page_collections() -> None:
+    st.title("📁 Collections")
+
+    all_colls = storage.get_all_collections()
+
+    with st.expander("➕ Create New Collection", expanded=not all_colls):
+        new_name  = st.text_input("Collection name", key="new_coll_name")
+        new_emoji = st.selectbox("Emoji", EMOJI_OPTIONS, key="new_coll_emoji")
+        new_desc  = st.text_area("Description (optional)", key="new_coll_desc", height=80)
+        if st.button("✅ Create", key="create_coll_btn", type="primary"):
+            if new_name.strip():
+                coll = Collection(
+                    name=new_name.strip(),
+                    emoji=new_emoji,
+                    description=new_desc.strip(),
+                )
+                storage.create_collection(coll)
+                st.success(f"✅ Collection '{new_emoji} {new_name}' created!")
+                st.rerun()
+            else:
+                st.warning("⚠️ Name cannot be empty.")
+
+    if not all_colls:
+        st.info("📦 No collections yet. Create your first one above!")
+        return
+
+    for coll in all_colls:
+        with st.expander(f"{coll.emoji} **{coll.name}** ({coll.video_count} videos)", expanded=False):
+            if coll.description:
+                st.caption(coll.description)
+
+            coll_videos = storage.get_videos_in_collection(coll.id)
+            if coll_videos:
+                cols = st.columns(3)
+                for i, v in enumerate(coll_videos):
+                    with cols[i % 3]:
+                        with st.container(border=True):
+                            title_s = v.title[:45] + "…" if len(v.title) > 45 else v.title
+                            st.markdown(f"**{title_s}**")
+                            st.caption(f"{STATUS_COLORS.get(v.status.value, '⚪')} {v.status.value.capitalize()}  ·  {v.channel}")
+                            _render_progress_bar(v, compact=True)
+                            bc1, bc2 = st.columns(2)
+                            with bc1:
+                                if st.button("📌 View", key=f"coll_view_{coll.id}_{v.video_id}"):
+                                    st.session_state["detail_video_id"] = v.video_id
+                                    st.session_state["page"] = "📚 Library"
+                                    st.rerun()
+                            with bc2:
+                                if st.button("➖ Remove", key=f"coll_rem_{coll.id}_{v.video_id}"):
+                                    storage.remove_video_from_collection(coll.id, v.video_id)
+                                    st.rerun()
+            else:
+                st.caption("No videos yet. Add them from the Library → video detail → Collections tab.")
+
+            st.divider()
+            if st.button(f"🗑️ Delete '{coll.name}'", key=f"del_coll_{coll.id}"):
+                storage.delete_collection(coll.id)
+                st.success(f"✅ Deleted '{coll.emoji} {coll.name}'")
+                st.rerun()
+
+
+def page_search() -> None:
+    st.title("🔍 Search")
+    query = st.text_input("Search across titles, channels, tags, notes, and summaries", placeholder="e.g. machine learning", label_visibility="collapsed")
+    if not query.strip():
+        st.info("Type a search query above to begin.")
+        return
+    with st.spinner("Searching..."):
+        results = storage.search_videos(query.strip())
+    if not results:
+        st.warning("No results found.")
+        return
+    st.caption(f"{len(results)} result(s) for **{query}**")
+    cols = st.columns(3)
+    for i, video in enumerate(results):
+        with cols[i % 3]:
+            _render_video_card(video)
+
+
+def page_settings() -> None:
+    st.title("⚙️ Settings")
+
+    # ── Weekly Goal ───────────────────────────────────────────────────────────
+    st.markdown("### 🎯 Weekly Watch Goal")
+    current_goal = settings.weekly_goal_hours
+    new_goal = st.number_input(
+        "Target hours per week (0 = disabled)",
+        min_value=0.0,
+        max_value=168.0,
+        value=float(current_goal),
+        step=0.5,
+        format="%.1f",
+        key="settings_goal",
+    )
+    if st.button("💾 Save Goal", key="save_goal_btn", type="primary"):
+        settings.weekly_goal_hours = new_goal
+        st.success(f"✅ Weekly goal set to {new_goal:.1f}h")
+
+    st.divider()
+
+    # ── Export ────────────────────────────────────────────────────────────────
+    st.markdown("### 📤 Export Library")
+    videos = storage.get_all_videos()
+
+    exp_col1, exp_col2, exp_col3 = st.columns(3)
+
+    with exp_col1:
+        st.markdown("**📊 CSV**")
+        if st.button("Generate CSV", key="gen_csv"):
+            csv_text = export_csv(videos)
+            st.download_button(
+                label="📥 Download CSV",
+                data=csv_text,
+                file_name="youtube_library.csv",
+                mime="text/csv",
+                key="dl_csv",
+            )
+
+    with exp_col2:
+        st.markdown("**📝 Markdown**")
+        if st.button("Generate Markdown", key="gen_md"):
+            md_text = export_markdown_library(videos)
+            st.download_button(
+                label="📥 Download Markdown",
+                data=md_text,
+                file_name="youtube_library.md",
+                mime="text/markdown",
+                key="dl_md",
+            )
+
+    with exp_col3:
+        st.markdown("**🗃️ JSON (full backup)**")
+        if st.button("Generate JSON", key="gen_json"):
+            json_text = storage.export_json()
+            st.download_button(
+                label="📥 Download JSON",
+                data=json_text,
+                file_name="youtube_library_backup.json",
+                mime="application/json",
+                key="dl_json",
+            )
+
+    st.divider()
+
+    # ── Import ────────────────────────────────────────────────────────────────
+    st.markdown("### 📥 Import Library")
+    st.caption("Import a previously exported JSON backup. Choose merge (add new videos only) or overwrite (replace entire library).")
+
+    import_file = st.file_uploader("Upload JSON backup", type=["json"], key="import_json_file")
+    import_mode = st.radio("Import mode", ["Merge (add new only)", "Overwrite (replace all)"], key="import_mode", horizontal=True)
+
+    if import_file and st.button("📥 Import", key="import_btn", type="primary"):
+        raw = import_file.read().decode("utf-8")
+        merge = import_mode.startswith("Merge")
+        try:
+            added, skipped = storage.import_json(raw, merge=merge)
+            st.success(f"✅ Import complete: {added} added, {skipped} skipped.")
+            st.rerun()
+        except Exception as exc:
+            st.error(f"❌ Import failed: {exc}")
+
+    st.divider()
+
+    # ── Danger zone ───────────────────────────────────────────────────────────
+    st.markdown("### 🗑️ Danger Zone")
+    with st.expander("⚠️ Delete entire library", expanded=False):
+        st.warning("This will permanently delete ALL videos from your library. This cannot be undone.")
+        confirm = st.text_input("Type DELETE to confirm", key="danger_confirm")
+        if st.button("🗑️ Delete All Videos", key="delete_all_btn", type="secondary"):
+            if confirm == "DELETE":
+                for v in videos:
+                    storage.delete_video(v.video_id)
+                st.success("✅ All videos deleted.")
+                st.rerun()
+            else:
+                st.error("❌ Type DELETE exactly to confirm.")
+
+
+# ╔══════════════════════════════════════════════════════
+# ║  MAIN / NAVIGATION
+# ╚══════════════════════════════════════════════════════
+
+def main() -> None:
+    pages = {
+        "📊 Dashboard":  page_dashboard,
+        "📚 Library":    page_library,
+        "➕ Add Video":  page_add_video,
+        "🔍 Search":     page_search,
+        "📁 Collections": page_collections,
+        "⚙️ Settings":   page_settings,
+    }
+
+    with st.sidebar:
+        st.markdown("## 📺 YT Tracker")
+        st.divider()
+        selected = st.radio(
+            "Navigate",
+            list(pages.keys()),
+            key="page",
+            label_visibility="collapsed",
+        )
+        st.divider()
+        videos_all = storage.get_all_videos()
+        total_all  = len(videos_all)
+        done_all   = sum(1 for v in videos_all if v.status == WatchStatus.COMPLETED)
+        watching_all = sum(1 for v in videos_all if v.status == WatchStatus.WATCHING)
+        st.caption(f"📚 {total_all} videos  ·  ✅ {done_all} done  ·  🟡 {watching_all} watching")
+
+        # ── Overdue badge in sidebar ──────────────────────────────────────────
+        today_sb = date.today()
+        overdue_count = sum(
+            1 for v in videos_all
+            if getattr(v, "due_date", None) and _safe_due_sidebar(v, today_sb)
+        )
+        if overdue_count:
+            st.error(f"🚨 {overdue_count} overdue video(s)")
+
+    pages[selected]()
+
+
+def _safe_due_sidebar(v: Video, today: date) -> bool:
+    dd = getattr(v, "due_date", None)
+    if not dd:
+        return False
+    try:
+        return date.fromisoformat(dd) < today
+    except ValueError:
+        return False
+
+
+if __name__ == "__main__":
+    main()
