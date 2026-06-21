@@ -29,10 +29,12 @@ if TYPE_CHECKING:
 
 def days_until(video: "Video") -> int | None:
     """Return signed days from today to video.due_date, or None if unset."""
-    if not video.due_date:
+    # getattr guard: tolerates Video instances loaded before F2 was added
+    due_date = getattr(video, "due_date", None)
+    if not due_date:
         return None
     try:
-        due = date.fromisoformat(video.due_date)  # expects YYYY-MM-DD
+        due = date.fromisoformat(due_date)  # expects YYYY-MM-DD
     except ValueError:
         return None
     return (due - date.today()).days
