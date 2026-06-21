@@ -286,9 +286,9 @@ def _export_study_guide(video: Video) -> str:
     lines.append(f"**URL:** {video.url}")
     if video.tags:
         lines.append(f"**Tags:** {', '.join(video.tags)}")
-    if video.rating:
+    if getattr(video, "rating", 0):
         lines.append(f"**Rating:** {'⭐' * video.rating}")
-    if video.due_date:
+    if getattr(video, "due_date", None):
         lines.append(f"**Due:** {video.due_date}")
     lines.append("")
     if video.summary_paragraph:
@@ -478,7 +478,6 @@ def _render_transcript_tab(video: Video) -> None:
 def _render_rating_due_tab(video: Video) -> None:
     """Render the ⭐ Rating & 📅 Reminders controls (F1 + F2)."""
     vid = video.video_id
-    changed = False
 
     # ── F1: Star rating ───────────────────────────────────────────
     st.markdown("### ⭐ Your Rating")
@@ -492,9 +491,6 @@ def _render_rating_due_tab(video: Video) -> None:
         key=f"rating_radio_{vid}",
         label_visibility="collapsed",
     )
-    if new_rating != current_rating:
-        video.rating = new_rating
-        changed = True
 
     st.divider()
 
@@ -534,8 +530,7 @@ def _render_rating_due_tab(video: Video) -> None:
         st.rerun()
 
     if st.button("💾 Save", key=f"save_rating_due_{vid}", type="primary"):
-        if new_rating != current_rating:
-            video.rating = new_rating
+        video.rating = new_rating
         if new_due_date:
             video.due_date = new_due_date.isoformat()
         elif not current_due:
@@ -880,187 +875,4 @@ def _render_dashboard_charts(videos: list[Video]) -> None:
             fig3 = go.Figure()
             for s in active:
                 fig3.add_trace(go.Bar(
-                    name=s.capitalize(),
-                    x=bands,
-                    y=band_counts[s],
-                    marker_color=_STATUS_HEX[s],
-                    hovertemplate=f"{s.capitalize()}: %{{y}} video(s)<extra></extra>",
-                ))
-            fig3.update_layout(
-                barmode="stack",
-                margin=dict(t=10, b=10, l=10, r=10),
-                height=260,
-                xaxis=dict(title="Progress band"),
-                yaxis=dict(title="Videos", dtick=1),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-            )
-            st.plotly_chart(fig3, width="stretch")
-
-
-# ── F2: upcoming / overdue reminders panel ────────────────────────────────────
-def _render_reminders(videos: list[Video]) -> None:
-    """Show overdue + upcoming-week videos as a compact reminder panel."""
-    overdue  = [v for v in videos if due_status(v) == "overdue"]
-    today    = [v for v in videos if due_status(v) == "today"]
-    soon     = [v for v in videos if due_status(v) == "soon"]
-    upcoming = [v for v in videos if due_status(v) == "upcoming"]
-
-    flagged = overdue + today + soon + upcoming
-    if not flagged:
-        return
-
-    st.divider()
-    st.subheader("📅 Watch Reminders")
-
-    def _reminder_row(v: Video, label: str, badge_fn) -> None:
-        r_col1, r_col2, r_col3 = st.columns([3, 1, 1])
-        with r_col1:
-            st.caption(f"{label}  **{v.title[:55]}{'...' if len(v.title) > 55 else ''}**  ·  {v.channel}")
-        with r_col2:
-            st.caption(f"Due: `{v.due_date}`")
-        with r_col3:
-            if st.button("📌 View", key=f"remind_view_{v.video_id}", use_container_width=True):
-                st.session_state["detail_video_id"] = v.video_id
-                st.rerun()
-
-    if overdue:
-        st.error(f"🔴 {len(overdue)} overdue")
-        for v in overdue:
-            _reminder_row(v, "🔴", None)
-    if today:
-        st.warning(f"🟡 Due today ({len(today)})")
-        for v in today:
-            _reminder_row(v, "🟡", None)
-    if soon:
-        with st.expander(f"🟡 Due soon — {len(soon)} video(s)", expanded=True):
-            for v in soon:
-                _reminder_row(v, "🟡", None)
-    if upcoming:
-        with st.expander(f"🟢 Upcoming this week — {len(upcoming)} video(s)", expanded=False):
-            for v in upcoming:
-                _reminder_row(v, "🟢", None)
-
-
-# ╔══════════════════════════════════════════════════════
-# ║  PAGE ROUTING
-# ╚══════════════════════════════════════════════════════
-
-with st.sidebar:
-    st.markdown("## 📺 YT Learning Tracker")
-    st.divider()
-    page = st.radio(
-        "Navigate",
-        ["📊 Dashboard", "➕ Add Video", "📚 Library", "📁 Collections", "🔍 Search", "⚙️ Settings"],
-        label_visibility="collapsed",
-    )
-    if "_last_page" not in st.session_state:
-        st.session_state["_last_page"] = page
-    if st.session_state["_last_page"] != page:
-        st.session_state.pop("detail_video_id", None)
-        st.session_state.pop("active_collection_id", None)
-        st.session_state["_last_page"] = page
-    st.divider()
-    counts = storage.count_by_status()
-    total  = sum(counts.values())
-    st.metric("Total Videos", total)
-    c1, c2 = st.columns(2)
-    c1.metric("🟢 Done",     counts.get("completed", 0))
-    c2.metric("🟡 Watching", counts.get("watching",  0))
-    n_colls = len(storage.get_all_collections())
-    if n_colls:
-        st.caption(f"📁 {n_colls} collection{'s' if n_colls != 1 else ''}")
-    goal_hours = settings.weekly_goal_hours
-    if goal_hours > 0:
-        all_vids_sidebar = storage.get_all_videos()
-        wh = _week_watched_hours(all_vids_sidebar)
-        pct_sidebar = min(wh / goal_hours, 1.0)
-        st.divider()
-        st.caption(f"🎯 Goal: {wh:.1f}h / {goal_hours:.1f}h this week")
-        st.progress(pct_sidebar)
-    # ── F2: overdue count in sidebar ────────────────────────────
-    all_sidebar = storage.get_all_videos()
-    n_overdue = sum(1 for v in all_sidebar if due_status(v) in ("overdue", "today"))
-    if n_overdue:
-        st.divider()
-        st.warning(f"🔴 {n_overdue} overdue / due today")
-
-
-# ── Dashboard ──────────────────────────────────────────────────────────────
-if page == "📊 Dashboard":
-    if "detail_video_id" in st.session_state:
-        v = storage.get_video(st.session_state["detail_video_id"])
-        if v:
-            _render_detail_page(v)
-            st.stop()
-    st.title("📊 Dashboard")
-    videos = storage.get_all_videos()
-    if not videos:
-        st.info("👋 No videos yet. Go to **➕ Add Video** to get started.")
-    else:
-        c1, c2, c3, c4, c5 = st.columns(5)
-        for col, (status, emoji) in zip(
-            [c1, c2, c3, c4, c5],
-            [("saved","🔵"),("watching","🟡"),("completed","🟢"),("dropped","🔴"),("rewatch","🟣")],
-        ):
-            col.metric(f"{emoji} {status.capitalize()}", counts.get(status, 0))
-
-        all_vids = storage.get_all_videos()
-        vids_with_duration = [v for v in all_vids if v.duration_sec > 0]
-        if vids_with_duration:
-            total_sec   = sum(v.duration_sec       for v in vids_with_duration)
-            watched_sec = sum(v.watch_progress_sec for v in vids_with_duration)
-            overall_pct = watched_sec / total_sec * 100 if total_sec else 0
-            st.divider()
-            prog_cols = st.columns([3, 1, 1])
-            with prog_cols[0]:
-                st.progress(
-                    min(1.0, watched_sec / total_sec),
-                    text=f"📊 Overall progress — {overall_pct:.1f}% of library watched",
-                )
-            with prog_cols[1]:
-                h, rem = divmod(watched_sec, 3600)
-                st.metric("⏱ Watched", f"{h}h {rem//60}m")
-            with prog_cols[2]:
-                h2, rem2 = divmod(total_sec, 3600)
-                st.metric("📽️ Total", f"{h2}h {rem2//60}m")
-
-        st.divider()
-        _render_weekly_goal(all_vids)
-
-        # ── F2: reminders panel on dashboard ─────────────────────
-        _render_reminders(all_vids)
-
-        st.divider()
-        st.subheader("📈 Insights")
-        _render_dashboard_charts(all_vids)
-
-        # ── F1: top-rated videos panel ────────────────────────────
-        top_rated = sorted(
-            [v for v in all_vids if (getattr(v, "rating", 0) or 0) >= 4],
-            key=lambda v: getattr(v, "rating", 0),
-            reverse=True,
-        )[:6]
-        if top_rated:
-            st.divider()
-            st.subheader("⭐ Top Rated")
-            tr_cols = st.columns(3)
-            for i, video in enumerate(top_rated):
-                with tr_cols[i % 3]:
-                    _render_video_card(video)
-
-        st.divider()
-        st.subheader("🕒 Recent Videos")
-        recent = sorted(videos, key=lambda v: v.updated_at, reverse=True)[:6]
-        cols = st.columns(3)
-        for i, video in enumerate(recent):
-            with cols[i % 3]:
-                _render_video_card(video)
-
-
-# ── Add Video ──────────────────────────────────────────────────────────────
-elif page == "➕ Add Video":
-    st.title("➕ Add New Video")
-    with st.form("add_video_form"):
-        url   
+                    
