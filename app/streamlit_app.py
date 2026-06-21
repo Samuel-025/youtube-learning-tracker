@@ -1,1 +1,0 @@
-$(cat /tmp/streamlit_app.py | base64)
