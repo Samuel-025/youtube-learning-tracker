@@ -1002,9 +1002,9 @@ def page_library() -> None:
         return date.fromisoformat(dd) if dd else date(9999, 12, 31)
 
     if sort_by == "Date added (newest)":
-        filtered.sort(key=lambda v: v.added_at or "", reverse=True)
+        filtered.sort(key=lambda v: v.created_at or "", reverse=True)
     elif sort_by == "Date added (oldest)":
-        filtered.sort(key=lambda v: v.added_at or "")
+        filtered.sort(key=lambda v: v.created_at or "")
     elif sort_by == "Title A→Z":
         filtered.sort(key=lambda v: v.title.lower())
     elif sort_by == "Title Z→A":
