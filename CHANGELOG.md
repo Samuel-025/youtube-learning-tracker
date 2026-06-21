@@ -8,6 +8,24 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
+## [v0.11.0] — 2026-06-21
+
+### Added
+- **F1 — Star Rating** — videos can be rated 1–5 stars (0 = unrated). Rating stored on the `Video` model as `rating: int` (clamped to 0–5 in `__post_init__`). Displayed as ⭐ stars in the Library cards, detail header, and Markdown export. Exported as a numeric column in CSV.
+- **F2 — Watch Reminders / Due Dates** — videos can have an optional `due_date` (YYYY-MM-DD). A new `core/due_date.py` module provides three pure helpers:
+  - `days_until(video) -> int | None` — signed days from today to due date; negative = overdue.
+  - `due_status(video) -> str | None` — classifies urgency as `'overdue'`, `'today'`, `'soon'` (1–2 days), `'upcoming'` (3–7 days), or `None` (>7 days / unset).
+  - `due_badge(video) -> tuple[str, str] | None` — returns `(emoji, label)` for UI display: 🔴 Overdue, 🟡 Due today / Due soon, 🟢 This week.
+- **`models/video.py`** — `rating: int = 0` and `due_date: str | None = None` fields added. `__post_init__` clamps rating and normalises empty-string due_date to `None`.
+- **`core/exporters.py`** updated — `rating` and `due_date` columns added to CSV (E3) and Markdown library export (E4). CSV now has 18 columns. Markdown renders 📅 due date line and ⭐ star rating per video.
+- **`tests/helpers.py`** updated — `make_video()` factory accepts `rating` and `due_date` keyword arguments.
+- **Test suite expanded** — three new / updated test modules:
+  - `tests/test_due_date.py` — 15 tests covering all branches of `days_until`, `due_status`, and `due_badge`.
+  - `tests/test_exporters.py` — extended with `test_rating_column_present`, `test_unrated_video_has_zero`, `test_due_date_column_present`, `test_no_due_date_produces_empty_string`, `test_rating_stars_in_markdown`, `test_due_date_in_markdown`.
+  - `tests/test_settings_store.py` — full coverage of `SettingsStore` defaults, persistence, `weekly_goal_hours` property, negative-clamp, corrupt-file resilience, and unknown-key preservation.
+
+---
+
 ## [v0.10.0] — 2026-06-21
 
 ### Added
