@@ -1440,7 +1440,8 @@ def page_settings() -> None:
     with exp_col3:
         st.markdown("**JSON (full backup)**")
         if st.button("⬇️ Export JSON", key="export_json_btn"):
-            json_text = storage.export_json()
+            # fix: export_json() returns dict — serialize to str for download_button
+            json_text = json.dumps(storage.export_json(), indent=2, ensure_ascii=False)
             st.download_button(
                 label="📥 Download JSON",
                 data=json_text,
@@ -1466,7 +1467,9 @@ def page_settings() -> None:
             try:
                 raw_json = import_file.read().decode("utf-8")
                 merge = import_mode.startswith("Merge")
-                added, skipped = storage.import_json(raw_json, merge=merge)
+                # fix: import_json() expects dict — parse the JSON string first
+                payload = json.loads(raw_json)
+                added, skipped = storage.import_json(payload, merge=merge)
                 st.success(f"✅ Import complete — {added} added, {skipped} skipped.")
                 st.rerun()
             except Exception as exc:
@@ -1481,7 +1484,8 @@ def page_settings() -> None:
         confirm = st.text_input("Type DELETE to confirm", key="delete_confirm_input")
         if st.button("🗑️ Delete Everything", key="delete_all_btn", type="primary"):
             if confirm.strip() == "DELETE":
-                storage.delete_all()
+                # fix: method is clear_all_videos(), not delete_all()
+                storage.clear_all_videos()
                 st.success("✅ Library cleared.")
                 st.rerun()
             else:
