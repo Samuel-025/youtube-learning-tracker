@@ -140,6 +140,56 @@ class Storage:
             self._write_collections(coll_data)
 
     # ------------------------------------------------------------------ #
+    #  E1 / E2 — Data Portability                                         #
+    # ------------------------------------------------------------------ #
+
+    def export_json(self) -> dict:
+        """Return a single dict containing all videos and collections for export.
+
+        Thread-safe: both files are snapshotted under a single lock acquisition.
+        The returned dict has schema_version=1 so future import code can migrate.
+        """
+        with _STORAGE_LOCK:
+            videos      = self._read()
+            collections = self._read_collections()
+        return {
+            "schema_version": 1,
+            "exported_at":    datetime.now().isoformat(),
+            "videos":         videos,
+            "collections":    collections,
+        }
+
+    def import_json(self, payload: dict, merge: bool = True) -> tuple[int, int]:
+        """Import videos and collections from an export payload.
+
+        merge=True  → skip existing IDs (safe top-up / second-machine sync).
+        merge=False → full overwrite; replaces entire library with payload data.
+
+        Returns (videos_imported, collections_imported) — counts of *new* records
+        written.  In overwrite mode this equals the total payload size.
+        """
+        videos_in      = payload.get("videos", {})
+        collections_in = payload.get("collections", {})
+
+        with _STORAGE_LOCK:
+            if merge:
+                existing_v = self._read()
+                existing_c = self._read_collections()
+                new_v = {k: v for k, v in videos_in.items() if k not in existing_v}
+                new_c = {k: v for k, v in collections_in.items() if k not in existing_c}
+                existing_v.update(new_v)
+                existing_c.update(new_c)
+                self._write(existing_v)
+                self._write_collections(existing_c)
+            else:
+                self._write(videos_in)
+                self._write_collections(collections_in)
+                new_v = videos_in
+                new_c = collections_in
+
+        return len(new_v), len(new_c)
+
+    # ------------------------------------------------------------------ #
     #  CRUD — Collections                                                  #
     # ------------------------------------------------------------------ #
 

@@ -8,6 +8,23 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
+## [v0.10.0] — 2026-06-21
+
+### Added
+- **E1 — JSON Export** — Settings page gains an "⬇️ Export JSON" button that snapshots the entire library (all videos, notes, progress, tags) and all collections into a single timestamped `.json` file available as a browser download. Thread-safe single-lock snapshot.
+- **E2 — JSON Import** — Settings page gains a file uploader that reads a previously exported `.json` file with two modes:
+  - **Merge** — adds only IDs not already present; safe top-up from another machine.
+  - **Overwrite** — full restore; replaces the entire library with the imported data.
+  - Schema version check (`schema_version: 1`) warns on unknown formats before proceeding.
+- **E3 — CSV Export** — Settings page "⬇️ Export CSV" button produces a spreadsheet-friendly file with 16 columns: `video_id`, `title`, `channel`, `url`, `status`, `progress_pct`, `watch_progress_sec`, `duration_sec`, `duration`, `tags`, `published_at`, `created_at`, `updated_at`, `manual_notes`, `summary_paragraph`, `thumbnail_url`. Tags joined with ` | ` for single-cell compatibility.
+- **E4 — Markdown Library Export** — Settings page "⬇️ Export Markdown" button renders the full library as a human-readable `.md` file grouped by watch status, including per-video channel, duration, progress, tags, notes, and summary. Collections section lists member video titles.
+- **E5 — Per-video JSON Export** — "⬇️ Export this video" download button on each video's detail page exports that video's full record (metadata, transcript, summary, notes, progress, tags) as a standalone `.json` file. Output is compatible with E2 import (wrap in the standard envelope).
+- **`core/exporters.py`** — new pure-function module (`export_csv`, `export_markdown_library`, `export_video_json`) with no Streamlit dependency; callable from CLI and tests.
+- **`Storage.export_json()`** — thread-safe snapshot returning `{schema_version, exported_at, videos, collections}`.
+- **`Storage.import_json(payload, merge)`** — atomic import under `_STORAGE_LOCK`; returns `(videos_imported, collections_imported)`.
+
+---
+
 ## [v0.9.0] — 2026-06-20
 
 ### Added
