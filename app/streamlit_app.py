@@ -47,7 +47,6 @@ def init_state() -> None:
 
 def go(page: str, video_id: str | None = None) -> None:
     st.session_state["page"] = page
-    st.session_state["sidebar_nav"] = page
     st.session_state["detail_video_id"] = video_id
     st.rerun()
 
@@ -74,9 +73,15 @@ def save_video_and_enrich(video: Video) -> None:
 def render_sidebar() -> None:
     with st.sidebar:
         st.title("📺 YouTube Tracker")
-        page = st.radio("Navigate", PAGES, key="sidebar_nav")
-        if page != st.session_state["page"]:
-            st.session_state["page"] = page
+
+        if "page" not in st.session_state:
+            st.session_state["page"] = PAGES[0]
+
+        current_index = PAGES.index(st.session_state["page"]) if st.session_state["page"] in PAGES else 0
+        current = st.radio("Navigate", PAGES, index=current_index, key="sidebar_nav")
+
+        if current != st.session_state["page"]:
+            st.session_state["page"] = current
             st.session_state["detail_video_id"] = None
             st.rerun()
 
