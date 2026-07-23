@@ -21,7 +21,7 @@ from core.transcript_extractor import TranscriptExtractor
 from core.summarizer import Summarizer
 from core.notes_generator import NotesGenerator
 from core.downloader import Downloader, ffmpeg_version, DownloadMode
-from core.due_date import due_badge, due_status
+from core.due_date import due_badge
 from core.ui_helpers import _apply_progress, _week_watched_hours, _linkify_timestamps
 from models.video import Video, WatchStatus
 from models.collection import Collection
@@ -54,16 +54,30 @@ PAGES = ["📊 Dashboard", "➕ Add Video", "📚 Library", "🗂 Collections", 
 
 def init_state() -> None:
     st.session_state.setdefault("page", "📊 Dashboard")
-    st.session_state.setdefault("sidebar_nav", "📊 Dashboard")
     st.session_state.setdefault("detail_video_id", None)
     st.session_state.setdefault("pending_video", None)
     st.session_state.setdefault("import_done", False)
 
 
-def go(page: str, video_id: str | None = None) -> None:
+# ── on_click callbacks (run before widgets, safe for session state) ──
+
+def _cb_nav(page: str) -> None:
     st.session_state["page"] = page
+    st.session_state["detail_video_id"] = None
+
+
+def _cb_view_video(video_id: str) -> None:
+    st.session_state.pop("sidebar_nav", None)
+    st.session_state["page"] = "📚 Library"
     st.session_state["detail_video_id"] = video_id
-    st.rerun()
+
+
+def _cb_back_to_library() -> None:
+    st.session_state["detail_video_id"] = None
+
+
+def _cb_clear_import() -> None:
+    st.session_state["import_done"] = False
 
 
 def all_videos() -> list[Video]:
@@ -89,53 +103,9 @@ def save_video_and_enrich(video: Video) -> None:
     storage.save_video(video)
 
 
-def render_tag_chips(tags: list[str], max_display: int = 3) -> str:
-    if not tags:
-        return ""
-    display = tags[:max_display]
-    chips = " ".join(
-        f'<span style="background:#333;color:#ccc;padding:1px 8px;border-radius:10px;font-size:0.8em;margin-right:4px">{t}</span>'
-        for t in display
-    )
-    if len(tags) > max_display:
-        chips += f'<span style="color:#888;font-size:0.8em"> +{len(tags) - max_display}</span>'
-    return chips
-
-
-def render_video_card(video: Video, key_prefix: str = "card") -> None:
-    cols = st.columns([1, 3, 1, 1])
-    with cols[0]:
-        if video.thumbnail_url:
-            st.image(video.thumbnail_url, use_container_width=True)
-    with cols[1]:
-        st.markdown(f"**{video.title}**")
-        meta_parts = [video.channel, video.duration, video.status.value]
-        badge = due_badge(video)
-        if badge:
-            meta_parts.append(f"{badge[0]} {badge[1]}")
-        st.caption(" • ".join(meta_parts))
-        chips = render_tag_chips(video.tags)
-        if chips:
-            st.markdown(chips, unsafe_allow_html=True)
-        if video.duration_sec > 0:
-            st.progress(video.progress_pct / 100)
-    with cols[2]:
-        if video.rating:
-            st.markdown("⭐" * video.rating)
-        else:
-            st.write("")
-    with cols[3]:
-        if st.button("📌 View", key=f"{key_prefix}_view_{video.video_id}"):
-            go("📚 Library", video.video_id)
-
-
-# ── Sidebar ──
-
 def render_sidebar() -> None:
     with st.sidebar:
         st.title("📺 YouTube Tracker")
-        if "page" not in st.session_state:
-            st.session_state["page"] = PAGES[0]
         current_index = PAGES.index(st.session_state["page"]) if st.session_state["page"] in PAGES else 0
         current = st.radio("Navigate", PAGES, index=current_index, key="sidebar_nav")
         if current != st.session_state["page"]:
@@ -145,88 +115,6 @@ def render_sidebar() -> None:
 
 
 # ── Dashboard ──
-
-def _render_weekly_goal() -> None:
-    goal = settings.weekly_goal_hours
-    watched = _week_watched_hours(all_videos())
-    st.subheader("🎯 Weekly Watch Goal")
-    if goal > 0:
-        pct = min(100.0, watched / goal * 100)
-        st.progress(pct / 100)
-        st.caption(f"{watched:.1f}h / {goal:.1f}h watched this week")
-        if watched >= goal:
-            st.success("🏆 Weekly goal achieved!")
-    else:
-        st.caption(f"{watched:.1f}h watched this week")
-        st.info("Set a goal in ⚙️ Settings to track your progress.")
-
-
-def _render_insight_charts() -> None:
-    if not _PLOTLY_AVAILABLE:
-        st.info("💡 Install plotly for interactive charts: `pip install plotly`")
-        return
-    videos = all_videos()
-    if not videos:
-        return
-
-    c1, c2 = st.columns(2)
-    with c1:
-        status_counts = storage.count_by_status()
-        df_status = [{"Status": k.capitalize(), "Count": v} for k, v in status_counts.items() if v > 0]
-        if df_status:
-            fig = px.pie(df_status, names="Status", values="Count", title="🍩 Library by Status", hole=0.4)
-            fig.update_layout(margin=dict(t=30, b=0, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig, use_container_width=True)
-    with c2:
-        by_status: dict[str, float] = {}
-        for v in videos:
-            key = v.status.value.capitalize()
-            by_status[key] = by_status.get(key, 0) + v.duration_sec
-        if by_status:
-            df_time = [{"Status": k, "Hours": round(v / 3600, 1)} for k, v in sorted(by_status.items())]
-            fig2 = px.bar(df_time, x="Hours", y="Status", title="⏱ Watch Time by Status", orientation="h")
-            fig2.update_layout(margin=dict(t=30, b=0, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)")
-            st.plotly_chart(fig2, use_container_width=True)
-
-    st.subheader("📊 Progress Distribution")
-    bands = {"0–25%": 0, "25–50%": 0, "50–75%": 0, "75–100%": 0}
-    for v in videos:
-        pct = v.progress_pct
-        if pct < 25:
-            bands["0–25%"] += 1
-        elif pct < 50:
-            bands["25–50%"] += 1
-        elif pct < 75:
-            bands["50–75%"] += 1
-        else:
-            bands["75–100%"] += 1
-    df_prog = [{"Band": k, "Videos": v} for k, v in bands.items()]
-    fig3 = px.bar(df_prog, x="Band", y="Videos", title="Progress Distribution")
-    fig3.update_layout(margin=dict(t=30, b=0, l=0, r=0), paper_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig3, use_container_width=True)
-
-
-def _render_due_reminders() -> None:
-    videos = all_videos()
-    due_groups: dict[str, list[Video]] = {"overdue": [], "today": [], "soon": [], "upcoming": []}
-    for v in videos:
-        status = due_status(v)
-        if status in due_groups:
-            due_groups[status].append(v)
-    if not any(due_groups.values()):
-        return
-    st.subheader("📅 Watch Reminders")
-    cols = st.columns(4)
-    labels = [("🔴 Overdue", "overdue"), ("🟡 Due today", "today"), ("🟡 Due soon", "soon"), ("🟢 This week", "upcoming")]
-    for col, (label, key) in zip(cols, labels):
-        with col:
-            group = due_groups[key]
-            if group:
-                st.metric(label, len(group))
-                for v in group:
-                    short = v.title[:40] + "…" if len(v.title) > 40 else v.title
-                    st.caption(short)
-
 
 def page_dashboard() -> None:
     st.title("📊 Dashboard")
@@ -239,24 +127,28 @@ def page_dashboard() -> None:
     c3.metric("Completed", sum(1 for v in videos if v.status == WatchStatus.COMPLETED))
     c4.metric("Watching", sum(1 for v in videos if v.status == WatchStatus.WATCHING))
 
-    total_watched = sum(v.watch_progress_sec for v in videos)
-    total_duration = sum(v.duration_sec for v in videos)
-    if total_duration > 0:
-        overall_pct = total_watched / total_duration * 100
-        st.progress(overall_pct / 100)
-        st.caption(f"Overall progress: {overall_pct:.1f}% of total library watched")
-
-    _render_weekly_goal()
-    _render_due_reminders()
-    _render_insight_charts()
-
     st.subheader("Recently Added")
     recent = sorted(videos, key=lambda v: v.created_at, reverse=True)[:8]
     if not recent:
         st.info("No videos saved yet.")
         return
+
     for video in recent:
-        render_video_card(video)
+        cols = st.columns([1, 4, 1])
+        with cols[0]:
+            if video.thumbnail_url:
+                st.image(video.thumbnail_url, width="stretch")
+        with cols[1]:
+            meta = f"{video.channel} • {video.duration} • {video.status.value}"
+            badge = due_badge(video)
+            if badge:
+                meta += f" • {badge[0]} {badge[1]}"
+            st.markdown(f"**{video.title}**")
+            st.caption(meta)
+            if video.rating:
+                st.markdown("⭐" * video.rating)
+        with cols[2]:
+            st.button("View", key=f"dash_view_{video.video_id}", on_click=_cb_view_video, args=(video.video_id,))
 
 
 # ── Add Video ──
@@ -269,7 +161,8 @@ def page_add_video() -> None:
 
     if fetch_clicked:
         try:
-            video = fetcher.fetch_video(url, storage=storage)
+            with st.spinner("Fetching metadata…"):
+                video = fetcher.fetch_video(url, storage=storage)
             st.session_state["pending_video"] = video
             st.success("Metadata fetched.")
             st.rerun()
@@ -295,14 +188,12 @@ def page_add_video() -> None:
         key="transcript_mode",
     )
 
-    transcript_text = video.transcript_text
-    transcript_source = video.transcript_source
-
     if transcript_mode == "Auto-fetch":
         if st.button("Fetch transcript", key="fetch_transcript"):
             try:
                 vid = extract_video_id(video.url) or video.video_id
-                fetched_text, fetched_source = extractor.extract(vid)
+                with st.spinner("Fetching transcript…"):
+                    fetched_text, fetched_source = extractor.extract(vid)
                 if fetched_text:
                     video.transcript_text = fetched_text
                     video.transcript_source = fetched_source
@@ -312,7 +203,8 @@ def page_add_video() -> None:
             except Exception as exc:
                 st.error(f"Transcript fetch failed: {exc}")
 
-    elif transcript_mode == "Paste manually":
+    transcript_text = video.transcript_text
+    if transcript_mode == "Paste manually":
         transcript_text = st.text_area("Paste transcript", value=video.transcript_text, height=220)
 
     tags_raw = st.text_input("Tags (comma-separated)")
@@ -329,10 +221,13 @@ def page_add_video() -> None:
         video.manual_notes = manual_notes.strip()
         video.tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
         try:
-            save_video_and_enrich(video)
+            with st.spinner("Generating summary and notes…"):
+                save_video_and_enrich(video)
             st.session_state["pending_video"] = None
             st.success("Video saved.")
-            go("📚 Library", video.video_id)
+            st.session_state["page"] = "📚 Library"
+            st.session_state["detail_video_id"] = video.video_id
+            st.rerun()
         except Exception as exc:
             st.error(f"Could not save video: {exc}")
 
@@ -347,7 +242,7 @@ def render_video_detail(video: Video) -> None:
         st.write(f"**URL:** {video.url}")
     with col_right:
         if video.thumbnail_url:
-            st.image(video.thumbnail_url, use_container_width=True)
+            st.image(video.thumbnail_url, width="stretch")
 
     c1, c2, c3, c4, c5 = st.columns([2, 2, 2, 2, 2])
     with c1:
@@ -512,7 +407,8 @@ def render_video_detail(video: Video) -> None:
             )
             if st.button("Download", key=f"dl_btn_{video.video_id}", type="primary"):
                 try:
-                    path = downloader.download(video.video_id, cast(DownloadMode, dl_mode))
+                    with st.spinner("Downloading…"):
+                        path = downloader.download(video.video_id, cast(DownloadMode, dl_mode))
                     if path.exists():
                         video.local_path = str(path)
                         video.updated_at = datetime.now().isoformat()
@@ -558,9 +454,7 @@ def page_library() -> None:
     if detail_id:
         video = storage.get_video(detail_id)
         if video:
-            if st.button("← Back to Library"):
-                st.session_state["detail_video_id"] = None
-                st.rerun()
+            st.button("← Back to Library", on_click=_cb_back_to_library)
             render_video_detail(video)
             return
 
@@ -610,7 +504,25 @@ def page_library() -> None:
 
     st.caption(f"{len(filtered)} video(s)")
     for video in filtered:
-        render_video_card(video, key_prefix="lib")
+        cols = st.columns([1, 4, 1])
+        with cols[0]:
+            if video.thumbnail_url:
+                st.image(video.thumbnail_url, width="stretch")
+        with cols[1]:
+            meta = f"{video.channel} • {video.duration} • {video.status.value}"
+            badge = due_badge(video)
+            if badge:
+                meta += f" • {badge[0]} {badge[1]}"
+            st.markdown(f"**{video.title}**")
+            st.caption(meta)
+            if video.rating:
+                st.markdown("⭐" * video.rating)
+            if video.tags:
+                st.caption("Tags: " + ", ".join(video.tags[:3]))
+            if video.duration_sec > 0:
+                st.progress(video.progress_pct / 100)
+        with cols[2]:
+            st.button("View", key=f"lib_view_{video.video_id}", on_click=_cb_view_video, args=(video.video_id,))
 
 
 # ── Collections ──
@@ -658,9 +570,10 @@ def page_collections() -> None:
                 cols = st.columns(3)
                 for i, v in enumerate(coll_videos):
                     with cols[i % 3]:
-                        st.caption(f"**{v.title[:50]}**" if len(v.title) > 50 else f"**{v.title}**")
+                        label = v.title[:50] + "…" if len(v.title) > 50 else v.title
+                        st.caption(f"**{label}**")
                         if v.thumbnail_url:
-                            st.image(v.thumbnail_url, use_container_width=True)
+                            st.image(v.thumbnail_url, width="stretch")
 
             st.divider()
             selected = st.multiselect(
@@ -702,21 +615,21 @@ def page_settings() -> None:
         st.download_button(
             "📄 Export CSV", csv_data,
             file_name="youtube_tracker.csv", mime="text/csv",
-            use_container_width=True,
+            width="stretch",
         )
     with col_ex2:
         export_data = json.dumps(storage.export_json(), indent=2, ensure_ascii=False)
         st.download_button(
             "📦 Export JSON", export_data,
             file_name="youtube_tracker.json", mime="application/json",
-            use_container_width=True,
+            width="stretch",
         )
     with col_ex3:
         md_data = export_markdown_library(videos, colls)
         st.download_button(
             "📝 Export Markdown", md_data,
             file_name="youtube_tracker.md", mime="text/markdown",
-            use_container_width=True,
+            width="stretch",
         )
 
     st.divider()
@@ -737,9 +650,7 @@ def page_settings() -> None:
             st.error(f"Import failed: {exc}")
 
     if st.session_state["import_done"]:
-        if st.button("Clear import state", key="clear_import"):
-            st.session_state["import_done"] = False
-            st.rerun()
+        st.button("Clear import state", key="clear_import", on_click=_cb_clear_import)
 
     st.divider()
 
