@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime, date
+from typing import cast
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -19,7 +20,7 @@ from core.youtube_fetcher import YouTubeFetcher, extract_video_id
 from core.transcript_extractor import TranscriptExtractor
 from core.summarizer import Summarizer
 from core.notes_generator import NotesGenerator
-from core.downloader import Downloader, ffmpeg_version
+from core.downloader import Downloader, ffmpeg_version, DownloadMode
 from core.due_date import due_badge, due_status
 from core.ui_helpers import _apply_progress, _week_watched_hours, _linkify_timestamps
 from models.video import Video, WatchStatus
@@ -511,7 +512,7 @@ def render_video_detail(video: Video) -> None:
             )
             if st.button("Download", key=f"dl_btn_{video.video_id}", type="primary"):
                 try:
-                    path = downloader.download(video.video_id, dl_mode)
+                    path = downloader.download(video.video_id, cast(DownloadMode, dl_mode))
                     if path.exists():
                         video.local_path = str(path)
                         video.updated_at = datetime.now().isoformat()
