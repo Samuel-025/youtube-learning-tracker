@@ -1,6 +1,6 @@
 # 📺 YouTube Learning Tracker
 
-> **v0.11.2** — Save, organise, summarise, track, download, export, rate, and schedule YouTube videos from a clean Streamlit web app running entirely on your local machine.
+> **v0.11.3** — Save, organise, summarise, track, download, export, rate, and schedule YouTube videos, Shorts, and Live streams from a clean Streamlit web app or CLI.
 
 ---
 
@@ -8,7 +8,7 @@
 
 | Feature | Description |
 |---|---|
-| 📥 Save videos | Paste any YouTube URL — fetches metadata, thumbnail, tags & transcript automatically |
+| 📥 Save videos | Paste any YouTube URL (standard watch, Shorts, or Live streams) — fetches metadata, thumbnail, tags & transcript automatically |
 | 📚 Library | Browse saved videos; filter by status, channel, and tags; sort by title / date added / progress |
 | 🔎 Inline Library search | Live text filter by title or channel — composes with all other filters simultaneously |
 | 🏷️ Tag filtering | Multiselect tag chips in the Library — AND logic across all selected tags |
@@ -18,7 +18,7 @@
 | 🎯 Weekly Watch Goal | ISO-week progress bar on the Dashboard; set your hourly goal in Settings |
 | ⭐ Star Rating | Rate any video 1–5 stars (0 = unrated); shown on cards, detail view, and Markdown export |
 | 📅 Watch Reminders | Set an optional due date per video; dashboard badges flag overdue / due-soon / this-week |
-| 🤖 AI Summary | Bullet-point summary + paragraph overview generated from the transcript |
+| 🤖 AI Summary | Bullet-point summary + paragraph overview generated from transcript via Groq, OpenAI, or Anthropic |
 | 🗒️ Notes | Auto-generated notes + your own manual notes per video |
 | 📥 Export Study Guide | Download a portable `.md` file with title, tags, summary, takeaways, and notes |
 | 💬 Q&A | Ask any question about a video — answered from its transcript |
@@ -63,8 +63,9 @@ copy .env.example .env
 |---|---|---|
 | `YOUTUBE_API_KEY` | ✅ Yes | [console.cloud.google.com](https://console.cloud.google.com) — free 10k units/day |
 | `GROQ_API_KEY` | Recommended | [console.groq.com](https://console.groq.com) — free, no credit card |
+| `GROQ_MODELS` | Optional | Custom comma-separated Groq model cascade order (e.g. `llama-3.3-70b-versatile,llama-3.1-8b-instant`) |
 | `OPENAI_API_KEY` | Optional | [platform.openai.com](https://platform.openai.com) |
-| `AI_PROVIDER` | Optional | `groq` (default) / `openai` / `none` |
+| `AI_PROVIDER` | Optional | `groq` (default) / `openai` / `anthropic` / `none` |
 
 ### 4. Run
 

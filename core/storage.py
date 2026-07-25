@@ -50,7 +50,12 @@ class Storage:
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, self.path)  # fix #1: atomic on all OSes
+        try:
+            os.replace(tmp, self.path)  # fix #1: atomic on all OSes
+        except PermissionError:
+            import time
+            time.sleep(0.05)
+            os.replace(tmp, self.path)
 
     # ------------------------------------------------------------------ #
     #  Internal I/O — Collections                                         #
@@ -68,7 +73,12 @@ class Storage:
         tmp = self._coll_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-        os.replace(tmp, self._coll_path)  # fix #1: atomic
+        try:
+            os.replace(tmp, self._coll_path)  # fix #1: atomic
+        except PermissionError:
+            import time
+            time.sleep(0.05)
+            os.replace(tmp, self._coll_path)
 
     # ------------------------------------------------------------------ #
     #  CRUD — Videos                                                       #
