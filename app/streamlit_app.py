@@ -15,7 +15,15 @@ load_dotenv(root / ".env")
 
 from core.storage import Storage
 from core.settings_store import SettingsStore
-from core.exporters import export_csv, export_markdown_library, export_video_json, export_anki_csv, export_obsidian_markdown, sync_to_notion
+from core.exporters import (
+    export_csv,
+    export_markdown_library,
+    export_video_json,
+    export_anki_csv,
+    export_all_anki_csv,
+    export_obsidian_markdown,
+    sync_to_notion,
+)
 from core.youtube_fetcher import YouTubeFetcher, extract_video_id
 from core.transcript_extractor import TranscriptExtractor
 from core.summarizer import Summarizer
@@ -313,7 +321,7 @@ def render_video_detail(video: Video) -> None:
             st.warning(f"Are you sure you want to delete '{video.title}'?")
             del_files = st.checkbox("Also delete downloaded media file on disk", value=True, key=f"del_files_{video.video_id}")
             if st.button("Yes, Delete Video", key=f"confirm_del_{video.video_id}", type="primary"):
-                storage.delete_video(video.video_id, delete_local_file=del_files)
+                storage.delete_video(video.video_id, del_files)
                 st.session_state["detail_video_id"] = None
                 st.success("Video deleted.")
                 st.rerun()
