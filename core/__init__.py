@@ -17,28 +17,40 @@ logger = logging.getLogger(__name__)
 #   meta-llama/llama-4-scout-17b-16e-instruct    1 K RPD / 500 RPM
 #   llama-3.1-8b-instant                        14.4 K RPD / 14.4 K RPM
 # ---------------------------------------------------------------------------
-GROQ_MODELS: list[str] = [
+import os
+
+DEFAULT_GROQ_MODELS: list[str] = [
     "llama-3.3-70b-versatile",
     "meta-llama/llama-4-scout-17b-16e-instruct",
     "llama-3.1-8b-instant",
 ]
 
 
+def get_groq_models() -> list[str]:
+    env_val = os.getenv("GROQ_MODELS", "").strip()
+    if env_val:
+        return [m.strip() for m in env_val.split(",") if m.strip()]
+    return DEFAULT_GROQ_MODELS
+
+
+GROQ_MODELS = DEFAULT_GROQ_MODELS
+
+
 def groq_chat(messages: list, max_tokens: int) -> str:
     """
-    Call Groq with model cascade.  Tries GROQ_MODELS in order,
+    Call Groq with model cascade. Tries GROQ_MODELS in order,
     skipping to the next model on 429 / rate_limit / model_decommissioned errors.
     fix #10: logs a warning whenever a fallback occurs so degraded quality is visible.
     fix: empty-string response is treated as a soft failure so the cascade
          continues instead of returning silently on content-filtered outputs.
     """
-    import os
     from groq import Groq  # type: ignore[import-untyped]
 
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
     last_err: Exception = RuntimeError("No Groq models available.")
 
-    for i, model in enumerate(GROQ_MODELS):
+    models = get_groq_models()
+    for i, model in enumerate(models):
         try:
             r = client.chat.completions.create(
                 model=model,

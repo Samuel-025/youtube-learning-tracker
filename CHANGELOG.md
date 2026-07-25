@@ -4,7 +4,17 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
-## [Unreleased]
+## [v0.11.3] — 2026-07-25
+
+### Added
+- **YouTube Live Stream URL Support** (`core/youtube_fetcher.py`) — `extract_video_id()` now supports `youtube.com/live/<id>` and `v/<id>` URLs alongside standard watch, shorts, and embed links.
+- **Configurable Groq AI Model Cascade** (`core/__init__.py`) — added support for the `GROQ_MODELS` environment variable to override or update Groq model cascade order without code changes.
+- **CLI Status Query** (`cli.py`) — running `python cli.py status <video_id>` without a second parameter now displays the video's current status and usage instructions instead of throwing an argument error.
+- **Unit Test Expansion** (`tests/`) — added test suites for CLI commands (`test_cli.py`), Groq cascade configuration (`test_groq_cascade.py`), HTTP 429 fallback (`test_transcript_extractor_429.py`), and YouTube Live URL parsing (`test_youtube_fetcher_live.py`), bringing test count to 224 items.
+
+### Fixed
+- **HTTP 429 Subtitle Rate Limit & Stderr Noise** (`core/transcript_extractor.py`) — added `player_client: ["web", "android"]` to subtitle download options, implemented per-language fallback retries, and suppressed repetitive `yt-dlp` bot detection stderr messages with a custom null logger.
+- **Windows Terminal UTF-8 Encoding Crash** (`cli.py`) — reconfigured `sys.stdout` and `sys.stderr` to `utf-8` on startup, resolving `UnicodeEncodeError` when printing emojis on Windows `cp1252` consoles.
 
 ---
 

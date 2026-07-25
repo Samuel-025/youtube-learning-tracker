@@ -101,33 +101,54 @@ class TranscriptExtractor:
                 seen.add(lang)
                 lang_codes.append(lang)
 
-        ydl_opts: dict[str, Any] = {
+        class _NullLogger:
+            def debug(self, msg: str) -> None:
+                pass
+            def warning(self, msg: str) -> None:
+                pass
+            def error(self, msg: str) -> None:
+                pass
+
+        base_opts: dict[str, Any] = {
             "skip_download": True,
             "quiet": True,
             "no_warnings": True,
+            "logger": _NullLogger(),
             "outtmpl": os.path.join(outdir, "%(id)s.%(ext)s"),
             "subtitlesformat": "vtt",
-            "subtitleslangs": lang_codes,
+            # fix: player_client bypass avoids 429 HTTP rate limits and JS challenge solvers
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["web", "android"],
+                }
+            },
         }
 
         # fix: pass ffmpeg_location so yt-dlp can find ffmpeg on Windows
         ff_path = shutil.which("ffmpeg")
         if ff_path:
-            ydl_opts["ffmpeg_location"] = str(Path(ff_path).parent)
+            base_opts["ffmpeg_location"] = str(Path(ff_path).parent)
 
         if sub_type == "manual":
-            ydl_opts["writesubtitles"] = True
+            base_opts["writesubtitles"] = True
         else:
-            ydl_opts["writeautomaticsub"] = True
+            base_opts["writeautomaticsub"] = True
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
-                ydl.download([url])
-        except Exception:
-            pass
+        # fix: try combined language list first, then individual languages
+        # to prevent a 429 rate limit on a single language track (e.g. 'hi')
+        # from breaking subtitle extraction for primary languages.
+        attempts = [lang_codes] + [[l] for l in lang_codes]
+        for langs in attempts:
+            ydl_opts = dict(base_opts)
+            ydl_opts["subtitleslangs"] = langs
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:  # type: ignore[arg-type]
+                    ydl.download([url])
+            except Exception:
+                pass
 
-        for f in Path(outdir).glob("*.vtt"):
-            return f
+            for f in Path(outdir).glob("*.vtt"):
+                return f
         return None
 
     def _parse_vtt(self, vtt_path: Path) -> str:

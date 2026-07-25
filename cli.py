@@ -3,6 +3,13 @@
 import argparse
 import sys
 import os
+
+# Fix UnicodeEncodeError on Windows CP1252 terminals when printing emojis
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 from dotenv import load_dotenv  # type: ignore[import-untyped]
 
 load_dotenv()
@@ -157,6 +164,14 @@ def cmd_status(args):
     if not video:
         console.print(f"[red]Video not found: {args.video_id}[/red]")
         return
+
+    if not args.status:
+        color = STATUS_COLORS.get(video.status.value, "white")
+        console.print(f"[bold white]{video.title}[/bold white]")
+        console.print(f"Current status: [{color}]{video.status.value}[/{color}]")
+        console.print("[dim]To update status: python cli.py status <video_id> <saved|watching|completed|dropped|rewatch>[/dim]")
+        return
+
     try:
         new_status = WatchStatus(args.status)
     except ValueError:
@@ -268,9 +283,9 @@ def main():
     p_view.add_argument("video_id", help="YouTube video ID")
     p_view.set_defaults(func=cmd_view)
 
-    p_status = subparsers.add_parser("status", help="Update watch status")
+    p_status = subparsers.add_parser("status", help="View or update watch status")
     p_status.add_argument("video_id", help="YouTube video ID")
-    p_status.add_argument("status", help="New status: saved|watching|completed|dropped|rewatch")
+    p_status.add_argument("status", nargs="?", default=None, help="Optional new status: saved|watching|completed|dropped|rewatch")
     p_status.set_defaults(func=cmd_status)
 
     p_trans = subparsers.add_parser("transcript", help="View or add transcript")
