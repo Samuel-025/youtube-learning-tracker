@@ -7,6 +7,9 @@ All notable changes to YouTube Learning Tracker are documented here.
 ## [v0.12.0] — 2026-07-25
 
 ### Added
+- **Notion Zero-Leak Security Model & Secret Sanitization** (`app/streamlit_app.py` & `core/exporters.py`) — loaded Notion API Key and Database ID securely from `.env` without exposing them in plaintext on screen (`🔒 Loaded securely from .env`); implemented `_sanitize_notion_error()` to automatically redact secret tokens from exception strings and UI error banners (`[REDACTED_TOKEN]`).
+- **Notion Schema Auto-Discovery & Dynamic Property Creation** (`core/exporters.py`) — auto-discovers existing database title property and dynamically creates missing columns (`Channel`, `URL`, `Status`, `Progress`, `Rating`, `Tags`) via Notion REST API.
+- **URL-to-UUID Auto-Extraction** (`core/exporters.py`) — `_extract_notion_db_id()` automatically extracts the 32-character hex UUID from full Notion URLs, hyphenated UUIDs, or raw hex strings.
 - **Single & Bulk Video Deletion with Media Disk Cleanup** (`core/storage.py`) — delete single or multiple videos with automated disk cleanup of downloaded MP3/MP4 files (`delete_video` & `delete_videos_batch`).
 - **UI Deletion Popover & Batch Actions Toolbar** (`app/streamlit_app.py`) — added a confirmation popover in Video Detail view and a Batch Operations toolbar in Library view to delete multiple selected videos at once.
 - **Export All Library Flashcards** (`core/exporters.py`) — export all flashcards across the entire library into a single combined Anki `.tsv` deck file (`export_all_anki_csv`).
@@ -15,9 +18,12 @@ All notable changes to YouTube Learning Tracker are documented here.
 - **Automated AI Flashcard Generator** (`core/summarizer.py` & `models/video.py`) — generate 5–8 high-yield Q&A and Cloze deletion flashcards from video transcripts using Groq, OpenAI, or Anthropic LLMs with fallback extraction.
 - **Anki Flashcard Deck Exporter** (`core/exporters.py`) — export video flashcards as TSV/CSV files ready for direct import into Anki decks.
 - **Obsidian Markdown Exporter** (`core/exporters.py`) — export video study guides as Obsidian-optimized `.md` notes featuring YAML frontmatter metadata, GFM callout boxes (`> [!summary]`, `> [!notes]`, `> [!flashcards]`), and deep-linked timestamps.
-- **Notion Cloud Sync Integration** (`core/exporters.py`) — push video metadata, status, summary, and flashcards directly to a Notion Database via official Notion REST API (`NOTION_API_KEY` & `NOTION_DATABASE_ID`).
 - **⚡ Study & Integrations Tab** (`app/streamlit_app.py`) — dedicated video detail view tab exposing instant AI flashcard generation, Anki export, Obsidian note download, and Notion cloud sync.
-- **Unit Test Suite Expansion** (`tests/test_delete.py`, `tests/test_flashcards.py`, `tests/test_study_exporters.py`) — added 9 unit tests bringing total test suite count to 233 passing items (`100%` pass rate).
+- **Unit Test Suite Expansion** (`tests/test_delete.py`, `tests/test_flashcards.py`, `tests/test_study_exporters.py`) — added unit tests bringing total test suite count to 233 passing items (`100%` pass rate).
+
+### Fixed
+- **Streamlit Navigation State Reset** (`app/streamlit_app.py`) — synchronized `st.session_state["sidebar_nav"]` with `st.session_state["page"]`, preventing button callbacks inside the video detail view from resetting the page to the Dashboard.
+- **Python <3.12 Syntax Compatibility** (`core/exporters.py`) — eliminated backslash expressions inside f-strings for full compatibility across Python 3.8–3.14.
 
 ---
 
