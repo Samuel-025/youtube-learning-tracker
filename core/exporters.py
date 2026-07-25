@@ -245,16 +245,19 @@ def export_obsidian_markdown(video: "Video") -> str:
     Frontmatter includes tags, status, due_date, rating, video_id, url.
     Body includes GFM Callouts (> [!summary], > [!notes], > [!flashcards]).
     """
+    safe_title = video.title.replace('"', '\\"')
+    safe_channel = video.channel.replace('"', '\\"')
+    due_str = video.due_date if video.due_date else ""
     lines: list[str] = [
         "---",
-        f"title: \"{video.title.replace('\"', '\\\"')}\"",
-        f"channel: \"{video.channel.replace('\"', '\\\"')}\"",
-        f"video_id: \"{video.video_id}\"",
-        f"url: \"{video.url}\"",
-        f"status: \"{video.status.value}\"",
+        f'title: "{safe_title}"',
+        f'channel: "{safe_channel}"',
+        f'video_id: "{video.video_id}"',
+        f'url: "{video.url}"',
+        f'status: "{video.status.value}"',
         f"rating: {video.rating}",
-        f"due_date: \"{video.due_date or ''}\"",
-        f"duration: \"{video.duration}\"",
+        f'due_date: "{due_str}"',
+        f'duration: "{video.duration}"',
         "tags:",
     ]
     for tag in (video.tags or []):
