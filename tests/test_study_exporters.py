@@ -64,6 +64,6 @@ def test_sync_to_notion_success(mock_post):
     mock_post.return_value = mock_resp
 
     video = make_test_video()
-    res = sync_to_notion(video, "secret_test_key", "db_id_123")
+    res = sync_to_notion(video, "secret_test_key", "4a1118a392d04e3ba39f362e5e2d8a7b")
     assert res is True
     mock_post.assert_called_once()

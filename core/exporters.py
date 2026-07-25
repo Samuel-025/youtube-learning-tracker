@@ -334,6 +334,28 @@ def export_obsidian_markdown(video: "Video") -> str:
     return "\n".join(lines)
 
 
+def _extract_notion_db_id(raw: str) -> str:
+    """Extract a clean Notion database UUID from a raw string.
+
+    Accepts:
+      - A 32-char hex string (no dashes)
+      - A standard UUID with dashes
+      - A full Notion URL containing the ID
+    """
+    import re
+    raw = raw.strip().rstrip("/")
+    # Try to find a 32-hex-char block (with or without dashes)
+    match = re.search(r"([0-9a-fA-F]{8}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{4}-?[0-9a-fA-F]{12})", raw)
+    if match:
+        hex_only = match.group(1).replace("-", "")
+        # Format as standard UUID
+        return f"{hex_only[:8]}-{hex_only[8:12]}-{hex_only[12:16]}-{hex_only[16:20]}-{hex_only[20:]}"
+    raise ValueError(
+        f"Could not extract a valid Notion database ID from: {raw!r}\n"
+        "Expected a 32-character hex string or a Notion URL containing one."
+    )
+
+
 def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
     """Push video record to a Notion Database via official Notion API.
 
@@ -343,6 +365,9 @@ def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
 
     if not api_key or not database_id:
         raise ValueError("Missing Notion API Key or Database ID.")
+
+    # Auto-extract UUID from URL or raw string
+    database_id = _extract_notion_db_id(database_id)
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -372,4 +397,5 @@ def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
     if resp.status_code not in (200, 201):
         raise RuntimeError(f"Notion API Error ({resp.status_code}): {resp.text}")
     return True
+
 
