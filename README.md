@@ -73,6 +73,8 @@ copy .env.example .env
 | `GROQ_MODELS` | Optional | Custom comma-separated Groq model cascade order (e.g. `llama-3.3-70b-versatile,llama-3.1-8b-instant`) |
 | `OPENAI_API_KEY` | Optional | [platform.openai.com](https://platform.openai.com) |
 | `AI_PROVIDER` | Optional | `groq` (default) / `openai` / `anthropic` / `none` |
+| `NOTION_API_KEY` | Optional | [notion.so/my-integrations](https://www.notion.so/my-integrations) — for syncing study notes directly to Notion |
+| `NOTION_DATABASE_ID` | Optional | Database ID from your Notion Database URL |
 
 ### 4. Run
 
@@ -232,25 +234,66 @@ ffmpeg -version  # verify
 
 ---
 
+---
+
+## 💻 CLI Reference
+
+In addition to the Streamlit web interface, YouTube Learning Tracker includes a rich Command Line Interface:
+
+```powershell
+# Add a video URL
+py -3.11 cli.py add https://www.youtube.com/watch?v=VIDEO_ID
+
+# List all saved videos in a formatted table
+py -3.11 cli.py list [--status STATUS]
+
+# View details, summary & notes for a video
+py -3.11 cli.py view VIDEO_ID
+
+# Query or update watch status (saved | watching | completed | dropped | rewatch)
+py -3.11 cli.py status VIDEO_ID [NEW_STATUS]
+
+# Delete a video and its downloaded media file
+py -3.11 cli.py delete VIDEO_ID [--keep-file]
+
+# Bulk delete multiple videos
+py -3.11 cli.py delete-batch VIDEO_ID_1 VIDEO_ID_2 ...
+
+# Export Anki TSV flashcards for a single video
+py -3.11 cli.py export-anki VIDEO_ID
+
+# Export all flashcards across your entire library into an Anki TSV deck
+py -3.11 cli.py export-all-anki
+
+# Export an Obsidian-formatted Markdown note
+py -3.11 cli.py export-obsidian VIDEO_ID
+
+# Sync a video directly to a Notion Database
+py -3.11 cli.py sync-notion VIDEO_ID
+```
+
+---
+
 ## 🗂️ Project Structure
 
 ```
 youtube-learning-tracker/
 ├── app/
-│   └── streamlit_app.py        # Main web UI (all pages)
+│   ├── streamlit_app.py        # Main web UI (all pages)
+│   └── style.css               # Visual design system (glassmorphism & dark mode CSS)
 ├── core/
 │   ├── __init__.py             # Groq model cascade helper
 │   ├── downloader.py           # yt-dlp wrapper — H.264 MP4 / MP3
 │   ├── due_date.py             # Due-date helpers (days_until, due_status, due_badge)
-│   ├── exporters.py            # Pure export functions: CSV, Markdown, per-video JSON
+│   ├── exporters.py            # Pure export functions: CSV, Markdown, Anki, Obsidian, Notion
 │   ├── notes_generator.py      # Auto bullet notes
 │   ├── settings_store.py       # Lightweight JSON settings persistence
-│   ├── storage.py              # JSON persistence (videos + collections) + export_json / import_json
-│   ├── summarizer.py           # AI summary + Q&A (Groq / OpenAI)
-│   ├── transcript_extractor.py # yt-dlp subtitle extraction
-│   └── youtube_fetcher.py      # YouTube Data API v3 metadata
+│   ├── storage.py              # Atomic JSON persistence + single/batch deletion
+│   ├── summarizer.py           # AI summary, Q&A, and AI Flashcard generator
+│   ├── transcript_extractor.py # Subtitle extraction with HTTP 429 resilience
+│   └── youtube_fetcher.py      # YouTube Data API v3 metadata (watch, Shorts, Live stream support)
 ├── models/
-│   ├── video.py                # Video dataclass + WatchStatus enum (rating, due_date fields)
+│   ├── video.py                # Video dataclass (rating, due_date, flashcards)
 │   └── collection.py           # Collection dataclass
 ├── data/
 │   ├── videos.json             # Your saved videos (gitignored)
@@ -260,14 +303,22 @@ youtube-learning-tracker/
 ├── tests/
 │   ├── conftest.py
 │   ├── helpers.py
+│   ├── test_cli.py
 │   ├── test_collection.py
+│   ├── test_delete.py
 │   ├── test_due_date.py
 │   ├── test_exporters.py
+│   ├── test_flashcards.py
+│   ├── test_groq_cascade.py
 │   ├── test_linkify.py
 │   ├── test_search.py
 │   ├── test_settings_store.py
 │   ├── test_storage.py
-│   └── test_video_model.py
+│   ├── test_study_exporters.py
+│   ├── test_transcript_extractor_429.py
+│   ├── test_video_model.py
+│   ├── test_week_goal.py
+│   └── test_youtube_fetcher_live.py
 ├── .env.example
 ├── CHANGELOG.md
 ├── requirements.txt
@@ -283,7 +334,7 @@ youtube-learning-tracker/
 py -3.11 -m pytest tests/ -v
 ```
 
-The test suite (10 modules) covers storage, the Video model, transcript timestamp linkifier (incl. XSS escape), collections, full-text search, CSV/Markdown/JSON exporters, `SettingsStore`, due-date classification helpers, and bug regressions (B1–B14). Shared fixtures live in `conftest.py` and `helpers.py`.
+The test suite (17 modules, 233 passed tests) covers storage atomic writes, batch deletion, Video dataclass, transcript timestamp linkifiers, collections, full-text search, CSV/Markdown/Anki/Obsidian/Notion exporters, `SettingsStore`, due-date classification, and bug regressions. Shared fixtures live in `conftest.py` and `helpers.py`.
 
 ---
 
