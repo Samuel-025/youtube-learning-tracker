@@ -58,12 +58,33 @@ def test_sync_to_notion_missing_keys():
 
 
 @patch("requests.post")
-def test_sync_to_notion_success(mock_post):
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_post.return_value = mock_resp
+@patch("requests.patch")
+@patch("requests.get")
+def test_sync_to_notion_success(mock_get, mock_patch, mock_post):
+    # Mock GET /databases/{id} — return schema with a "Name" title property
+    mock_db_resp = MagicMock()
+    mock_db_resp.status_code = 200
+    mock_db_resp.json.return_value = {
+        "properties": {
+            "Name": {"type": "title", "title": {}},
+        }
+    }
+    mock_get.return_value = mock_db_resp
+
+    # Mock PATCH /databases/{id} — adding missing properties
+    mock_patch_resp = MagicMock()
+    mock_patch_resp.status_code = 200
+    mock_patch.return_value = mock_patch_resp
+
+    # Mock POST /pages — creating the page
+    mock_post_resp = MagicMock()
+    mock_post_resp.status_code = 200
+    mock_post.return_value = mock_post_resp
 
     video = make_test_video()
     res = sync_to_notion(video, "secret_test_key", "4a1118a392d04e3ba39f362e5e2d8a7b")
     assert res is True
-    mock_post.assert_called_once()
+    mock_get.assert_called_once()   # schema fetch
+    mock_patch.assert_called_once() # property creation
+    mock_post.assert_called_once()  # page creation
+

@@ -359,6 +359,10 @@ def _extract_notion_db_id(raw: str) -> str:
 def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
     """Push video record to a Notion Database via official Notion API.
 
+    Automatically discovers the database schema:
+      - Finds the existing title property (whatever it's named)
+      - Creates missing properties (Channel, URL, Status, Progress, Rating, Tags)
+
     Returns True on HTTP 200/201 success.
     """
     import requests
@@ -375,27 +379,140 @@ def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
         "Content-Type": "application/json",
     }
 
-    payload = {
-        "parent": {"database_id": database_id},
-        "properties": {
-            "Title": {
-                "title": [{"text": {"content": video.title}}]
-            },
-            "Channel": {
-                "rich_text": [{"text": {"content": video.channel}}]
-            },
-            "URL": {
-                "url": video.url
-            },
-            "Status": {
-                "select": {"name": video.status.value.capitalize()}
-            },
-        }
+    # ── Step 1: Retrieve the database schema ──────────────────────────
+    db_resp = requests.get(
+        f"https://api.notion.com/v1/databases/{database_id}",
+        headers=headers,
+        timeout=10,
+    )
+    if db_resp.status_code != 200:
+        raise RuntimeError(f"Notion API Error fetching database ({db_resp.status_code}): {db_resp.text}")
+
+    db_schema = db_resp.json()
+    existing_props = db_schema.get("properties", {})
+
+    # Find the title property name (every Notion DB has exactly one)
+    title_prop_name = "Name"  # fallback
+    for prop_name, prop_def in existing_props.items():
+        if prop_def.get("type") == "title":
+            title_prop_name = prop_name
+            break
+
+    # ── Step 2: Ensure required properties exist ──────────────────────
+    # Map our desired property names → Notion property type definitions
+    required_props = {
+        "Channel":  {"rich_text": {}},
+        "URL":      {"url": {}},
+        "Status":   {"select": {"options": [
+            {"name": "Saved", "color": "gray"},
+            {"name": "Watching", "color": "blue"},
+            {"name": "Completed", "color": "green"},
+            {"name": "Dropped", "color": "red"},
+            {"name": "Rewatch", "color": "purple"},
+        ]}},
+        "Progress": {"number": {"format": "percent"}},
+        "Rating":   {"number": {"format": "number"}},
+        "Tags":     {"multi_select": {}},
     }
 
-    resp = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload, timeout=10)
+    props_to_add = {}
+    for prop_name, prop_schema in required_props.items():
+        if prop_name not in existing_props:
+            props_to_add[prop_name] = prop_schema
+
+    if props_to_add:
+        update_resp = requests.patch(
+            f"https://api.notion.com/v1/databases/{database_id}",
+            headers=headers,
+            json={"properties": props_to_add},
+            timeout=10,
+        )
+        if update_resp.status_code not in (200, 201):
+            raise RuntimeError(
+                f"Notion API Error adding properties ({update_resp.status_code}): {update_resp.text}"
+            )
+
+    # ── Step 3: Build the page payload ────────────────────────────────
+    properties: dict = {
+        title_prop_name: {
+            "title": [{"text": {"content": video.title}}]
+        },
+        "Channel": {
+            "rich_text": [{"text": {"content": video.channel}}]
+        },
+        "URL": {
+            "url": video.url
+        },
+        "Status": {
+            "select": {"name": video.status.value.capitalize()}
+        },
+        "Progress": {
+            "number": video.progress_pct / 100.0
+        },
+    }
+
+    if getattr(video, "rating", None):
+        properties["Rating"] = {"number": video.rating}
+
+    if video.tags:
+        properties["Tags"] = {
+            "multi_select": [{"name": t} for t in video.tags[:25]]  # Notion limit
+        }
+
+    # ── Step 4: Add page content blocks (summary + notes) ────────────
+    children = []
+    summary = video.summary_paragraph or ""
+    if summary:
+        children.append({
+            "object": "block",
+            "type": "heading_2",
+            "heading_2": {"rich_text": [{"text": {"content": "Summary"}}]},
+        })
+        # Split summary into chunks ≤2000 chars (Notion block limit)
+        for chunk in _chunk_text(summary, 2000):
+            children.append({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {"rich_text": [{"text": {"content": chunk}}]},
+            })
+
+    notes = video.manual_notes or ""
+    if notes:
+        children.append({
+            "object": "block",
+            "type": "heading_2",
+            "heading_2": {"rich_text": [{"text": {"content": "Notes"}}]},
+        })
+        for chunk in _chunk_text(notes, 2000):
+            children.append({
+                "object": "block",
+                "type": "paragraph",
+                "paragraph": {"rich_text": [{"text": {"content": chunk}}]},
+            })
+
+    # ── Step 5: Create the page ───────────────────────────────────────
+    payload: dict = {
+        "parent": {"database_id": database_id},
+        "properties": properties,
+    }
+    if children:
+        payload["children"] = children
+
+    resp = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload, timeout=15)
     if resp.status_code not in (200, 201):
         raise RuntimeError(f"Notion API Error ({resp.status_code}): {resp.text}")
     return True
+
+
+def _chunk_text(text: str, max_len: int = 2000) -> list[str]:
+    """Split text into chunks of at most max_len characters."""
+    if not text:
+        return []
+    chunks = []
+    while text:
+        chunks.append(text[:max_len])
+        text = text[max_len:]
+    return chunks
+
 
 
