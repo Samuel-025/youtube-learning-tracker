@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root))
-load_dotenv(root / ".env")
+load_dotenv(root / ".env", override=True)
 
 from core.storage import Storage
 from core.settings_store import SettingsStore
@@ -527,16 +527,21 @@ def render_video_detail(video: Video) -> None:
         with c_exp3:
             st.markdown("**📝 Notion Cloud Sync**")
             st.caption("Sync video metadata directly into Notion Database.")
+            load_dotenv(root / ".env", override=True)
             notion_key = os.getenv("NOTION_API_KEY", "")
             notion_db = os.getenv("NOTION_DATABASE_ID", "")
-            if not notion_key or not notion_db:
-                st.warning("Set `NOTION_API_KEY` & `NOTION_DATABASE_ID` in `.env` to enable sync.")
-            else:
-                if st.button("🚀 Sync to Notion", key=f"sync_notion_btn_{video.video_id}"):
+
+            notion_key_input = st.text_input("API Key / Token", value=notion_key, type="password", key=f"nk_{video.video_id}")
+            notion_db_input = st.text_input("Database ID or URL", value=notion_db, key=f"ndb_{video.video_id}")
+
+            if st.button("🚀 Sync to Notion", key=f"sync_notion_btn_{video.video_id}", type="primary"):
+                if not notion_key_input.strip() or not notion_db_input.strip():
+                    st.warning("Please enter both Notion API Key and Database ID.")
+                else:
                     try:
                         with st.spinner("Syncing to Notion…"):
-                            sync_to_notion(video, notion_key, notion_db)
-                        st.success("Synced to Notion!")
+                            sync_to_notion(video, notion_key_input.strip(), notion_db_input.strip())
+                        st.success("✓ Synced to Notion successfully!")
                     except Exception as exc:
                         st.error(f"Notion Sync failed: {exc}")
 
