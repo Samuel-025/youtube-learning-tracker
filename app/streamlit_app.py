@@ -75,12 +75,13 @@ def init_state() -> None:
 
 def _cb_nav(page: str) -> None:
     st.session_state["page"] = page
+    st.session_state["sidebar_nav"] = page
     st.session_state["detail_video_id"] = None
 
 
 def _cb_view_video(video_id: str) -> None:
-    st.session_state.pop("sidebar_nav", None)
     st.session_state["page"] = "📚 Library"
+    st.session_state["sidebar_nav"] = "📚 Library"
     st.session_state["detail_video_id"] = video_id
 
 
@@ -118,8 +119,9 @@ def save_video_and_enrich(video: Video) -> None:
 def render_sidebar() -> None:
     with st.sidebar:
         st.title("📺 YouTube Tracker")
-        current_index = PAGES.index(st.session_state["page"]) if st.session_state["page"] in PAGES else 0
-        current = st.radio("Navigate", PAGES, index=current_index, key="sidebar_nav")
+        if "sidebar_nav" not in st.session_state or st.session_state["sidebar_nav"] != st.session_state["page"]:
+            st.session_state["sidebar_nav"] = st.session_state["page"]
+        current = st.radio("Navigate", PAGES, key="sidebar_nav")
         if current != st.session_state["page"]:
             st.session_state["page"] = current
             st.session_state["detail_video_id"] = None
@@ -238,6 +240,7 @@ def page_add_video() -> None:
             st.session_state["pending_video"] = None
             st.success("Video saved.")
             st.session_state["page"] = "📚 Library"
+            st.session_state["sidebar_nav"] = "📚 Library"
             st.session_state["detail_video_id"] = video.video_id
             st.rerun()
         except Exception as exc:
