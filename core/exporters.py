@@ -356,6 +356,13 @@ def _extract_notion_db_id(raw: str) -> str:
     )
 
 
+def _sanitize_notion_error(msg: str, api_key: str) -> str:
+    """Ensure sensitive API keys/tokens are stripped from error strings."""
+    if api_key and api_key in msg:
+        msg = msg.replace(api_key, "[REDACTED_TOKEN]")
+    return msg
+
+
 def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
     """Push video record to a Notion Database via official Notion API.
 
@@ -386,7 +393,8 @@ def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
         timeout=10,
     )
     if db_resp.status_code != 200:
-        raise RuntimeError(f"Notion API Error fetching database ({db_resp.status_code}): {db_resp.text}")
+        clean_err = _sanitize_notion_error(db_resp.text, api_key)
+        raise RuntimeError(f"Notion API Error fetching database ({db_resp.status_code}): {clean_err}")
 
     db_schema = db_resp.json()
     existing_props = db_schema.get("properties", {})
@@ -428,8 +436,9 @@ def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
             timeout=10,
         )
         if update_resp.status_code not in (200, 201):
+            clean_err = _sanitize_notion_error(update_resp.text, api_key)
             raise RuntimeError(
-                f"Notion API Error adding properties ({update_resp.status_code}): {update_resp.text}"
+                f"Notion API Error adding properties ({update_resp.status_code}): {clean_err}"
             )
 
     # ── Step 3: Build the page payload ────────────────────────────────
@@ -500,7 +509,8 @@ def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
 
     resp = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload, timeout=15)
     if resp.status_code not in (200, 201):
-        raise RuntimeError(f"Notion API Error ({resp.status_code}): {resp.text}")
+        clean_err = _sanitize_notion_error(resp.text, api_key)
+        raise RuntimeError(f"Notion API Error ({resp.status_code}): {clean_err}")
     return True
 
 

@@ -529,24 +529,45 @@ def render_video_detail(video: Video) -> None:
 
         with c_exp3:
             st.markdown("**📝 Notion Cloud Sync**")
-            st.caption("Sync video metadata directly into Notion Database.")
+            st.caption("Sync video metadata & notes directly into your Notion Database.")
             load_dotenv(root / ".env", override=True)
-            notion_key = os.getenv("NOTION_API_KEY", "")
-            notion_db = os.getenv("NOTION_DATABASE_ID", "")
+            env_key = os.getenv("NOTION_API_KEY", "").strip()
+            env_db = os.getenv("NOTION_DATABASE_ID", "").strip()
 
-            notion_key_input = st.text_input("API Key / Token", value=notion_key, type="password", key=f"nk_{video.video_id}")
-            notion_db_input = st.text_input("Database ID or URL", value=notion_db, key=f"ndb_{video.video_id}")
+            has_env_credentials = bool(env_key and env_db)
+
+            if has_env_credentials:
+                st.caption("🔒 *Loaded securely from `.env`*")
+                use_custom = False
+                key_to_use = env_key
+                db_to_use = env_db
+
+                with st.expander("⚙️ Override Credentials (Optional)", expanded=False):
+                    override_key = st.text_input("Custom API Token", type="password", key=f"nk_ov_{video.video_id}")
+                    override_db = st.text_input("Custom Database ID or URL", key=f"ndb_ov_{video.video_id}")
+                    if override_key.strip() and override_db.strip():
+                        use_custom = True
+                        key_to_use = override_key.strip()
+                        db_to_use = override_db.strip()
+            else:
+                st.caption("⚠️ *Credentials not configured in `.env`*")
+                with st.expander("🔑 Enter Notion Credentials", expanded=True):
+                    key_to_use = st.text_input("API Token", type="password", key=f"nk_in_{video.video_id}").strip()
+                    db_to_use = st.text_input("Database ID or URL", type="password", key=f"ndb_in_{video.video_id}").strip()
 
             if st.button("🚀 Sync to Notion", key=f"sync_notion_btn_{video.video_id}", type="primary"):
-                if not notion_key_input.strip() or not notion_db_input.strip():
-                    st.warning("Please enter both Notion API Key and Database ID.")
+                if not key_to_use or not db_to_use:
+                    st.warning("Please configure Notion API Token and Database ID in `.env` or in the fields above.")
                 else:
                     try:
                         with st.spinner("Syncing to Notion…"):
-                            sync_to_notion(video, notion_key_input.strip(), notion_db_input.strip())
+                            sync_to_notion(video, key_to_use, db_to_use)
                         st.success("✓ Synced to Notion successfully!")
                     except Exception as exc:
-                        st.error(f"Notion Sync failed: {exc}")
+                        err_str = str(exc)
+                        if key_to_use:
+                            err_str = err_str.replace(key_to_use, "[REDACTED_TOKEN]")
+                        st.error(f"Notion Sync failed: {err_str}")
 
 
 # ── Library ──
