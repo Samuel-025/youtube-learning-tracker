@@ -1,0 +1,107 @@
+/* YouTube Learning Tracker — Modern Premium Design System */
+
+:root {
+  --bg-primary: #0e1117;
+  --bg-secondary: #161b22;
+  --card-bg: rgba(22, 27, 34, 0.75);
+  --card-border: rgba(255, 255, 255, 0.1);
+  --accent-color: #ff4b4b;
+  --accent-gradient: linear-gradient(135deg, #ff4b4b 0%, #ff6b6b 100%);
+  --text-primary: #f0f6fc;
+  --text-secondary: #8b949e;
+  --radius-lg: 12px;
+  --radius-md: 8px;
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --shadow-hover: 0 8px 24px rgba(255, 75, 75, 0.2);
+}
+
+/* Glassmorphic Container Cards */
+div.stMetric, div[data-testid="stVerticalBlock"] > div.stElementContainer {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Card Hover Elevation */
+.stCardHover {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  backdrop-filter: blur(12px);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stCardHover:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+  border-color: rgba(255, 75, 75, 0.4);
+}
+
+/* Status Badges */
+.badge-saved {
+  background: rgba(56, 139, 253, 0.15);
+  color: #58a6ff;
+  border: 1px solid rgba(56, 139, 253, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-watching {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-completed {
+  background: rgba(46, 160, 67, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(46, 160, 67, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-rewatch {
+  background: rgba(163, 113, 247, 0.15);
+  color: #bc8cff;
+  border: 1px solid rgba(163, 113, 247, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badge-dropped {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #484f58;
+}

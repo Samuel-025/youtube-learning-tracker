@@ -207,3 +207,142 @@ def export_video_json(video: "Video") -> str:
         "video":          video.to_dict(),
     }
     return json.dumps(payload, indent=2, ensure_ascii=False)
+
+
+# ── Study Integration Suite: Anki, Obsidian & Notion Exporters ──────────────
+
+def export_anki_csv(video: "Video") -> str:
+    """Export video flashcards as an Anki-importable CSV/TSV string.
+
+    Format per row: Front (Question) \t Back (Answer) \t Tags \t URL
+    If video has no explicit flashcards, uses summary bullets as Front/Back pairs.
+    """
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter="\t", lineterminator="\r\n")
+
+    cards = video.flashcards or []
+    if not cards and video.summary_bullets:
+        # Fallback card pairs from bullets
+        for i in range(0, len(video.summary_bullets) - 1, 2):
+            cards.append({
+                "front": f"Key Takeaway: {video.title}",
+                "back": f"{video.summary_bullets[i]} — {video.summary_bullets[i+1]}"
+            })
+
+    tags_str = " ".join(t.replace(" ", "_") for t in (video.tags or []))
+    for card in cards:
+        front = card.get("front", "").replace("\n", "<br>")
+        back = card.get("back", "").replace("\n", "<br>")
+        if front and back:
+            writer.writerow([front, back, tags_str, video.url])
+
+    return buf.getvalue()
+
+
+def export_obsidian_markdown(video: "Video") -> str:
+    """Render a Video as an Obsidian-optimized Markdown file with YAML frontmatter & callouts.
+
+    Frontmatter includes tags, status, due_date, rating, video_id, url.
+    Body includes GFM Callouts (> [!summary], > [!notes], > [!flashcards]).
+    """
+    lines: list[str] = [
+        "---",
+        f"title: \"{video.title.replace('\"', '\\\"')}\"",
+        f"channel: \"{video.channel.replace('\"', '\\\"')}\"",
+        f"video_id: \"{video.video_id}\"",
+        f"url: \"{video.url}\"",
+        f"status: \"{video.status.value}\"",
+        f"rating: {video.rating}",
+        f"due_date: \"{video.due_date or ''}\"",
+        f"duration: \"{video.duration}\"",
+        "tags:",
+    ]
+    for tag in (video.tags or []):
+        lines.append(f"  - {tag}")
+    lines += [
+        "---",
+        "",
+        f"# 📺 {video.title}",
+        "",
+        f"**Channel:** {video.channel}  |  **Duration:** {video.duration}  |  **URL:** [{video.url}]({video.url})",
+        "",
+    ]
+
+    if video.summary_paragraph:
+        lines += [
+            "> [!summary] Summary",
+            f"> {video.summary_paragraph}",
+            "",
+        ]
+
+    if video.summary_bullets:
+        lines += ["> [!abstract] Key Takeaways"]
+        for b in video.summary_bullets:
+            lines.append(f"> - {b}")
+        lines.append("")
+
+    if video.manual_notes:
+        lines += [
+            "> [!note] Manual Notes",
+        ]
+        for n_line in video.manual_notes.splitlines():
+            lines.append(f"> {n_line}")
+        lines.append("")
+
+    if video.flashcards:
+        lines += ["> [!question] Flashcards"]
+        for fc in video.flashcards:
+            lines.append(f"> **Q:** {fc.get('front', '')}")
+            lines.append(f"> **A:** {fc.get('back', '')}")
+            lines.append(">")
+        lines.append("")
+
+    if video.transcript_text:
+        lines += [
+            "## 📜 Transcript",
+            "",
+            video.transcript_text,
+        ]
+
+    return "\n".join(lines)
+
+
+def sync_to_notion(video: "Video", api_key: str, database_id: str) -> bool:
+    """Push video record to a Notion Database via official Notion API.
+
+    Returns True on HTTP 200/201 success.
+    """
+    import requests
+
+    if not api_key or not database_id:
+        raise ValueError("Missing Notion API Key or Database ID.")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "parent": {"database_id": database_id},
+        "properties": {
+            "Title": {
+                "title": [{"text": {"content": video.title}}]
+            },
+            "Channel": {
+                "rich_text": [{"text": {"content": video.channel}}]
+            },
+            "URL": {
+                "url": video.url
+            },
+            "Status": {
+                "select": {"name": video.status.value.capitalize()}
+            },
+        }
+    }
+
+    resp = requests.post("https://api.notion.com/v1/pages", headers=headers, json=payload, timeout=10)
+    if resp.status_code not in (200, 201):
+        raise RuntimeError(f"Notion API Error ({resp.status_code}): {resp.text}")
+    return True
+

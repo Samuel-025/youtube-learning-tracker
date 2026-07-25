@@ -15,7 +15,7 @@ load_dotenv(root / ".env")
 
 from core.storage import Storage
 from core.settings_store import SettingsStore
-from core.exporters import export_csv, export_markdown_library, export_video_json
+from core.exporters import export_csv, export_markdown_library, export_video_json, export_anki_csv, export_obsidian_markdown, sync_to_notion
 from core.youtube_fetcher import YouTubeFetcher, extract_video_id
 from core.transcript_extractor import TranscriptExtractor
 from core.summarizer import Summarizer
@@ -38,6 +38,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+css_file = root / "app" / "style.css"
+if css_file.exists():
+    st.markdown(f"<style>{css_file.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
 
 storage_path = os.getenv("STORAGE_PATH", str(root / "data" / "videos.json"))
 settings_path = str(root / "data" / "settings.json")
@@ -304,7 +308,7 @@ def render_video_detail(video: Video) -> None:
 
     st.divider()
 
-    tabs = st.tabs(["Summary", "Transcript", "Notes", "Progress", "Download", "Q&A"])
+    tabs = st.tabs(["Summary", "Transcript", "Notes", "Progress", "Download", "Q&A", "⚡ Study & Export"])
 
     with tabs[0]:
         if video.summary_paragraph:
@@ -439,6 +443,82 @@ def render_video_detail(video: Video) -> None:
                     answer = summarizer.answer_question(video.transcript_text, question, video.title)
                 st.markdown("**Answer:**")
                 st.write(answer)
+
+    with tabs[6]:
+        st.markdown("### ⚡ Study & Integrations Suite")
+        st.caption("Generate AI flashcards, export Obsidian notes, download Anki decks, or sync directly with Notion.")
+
+        c_fc1, c_fc2 = st.columns([2, 1])
+        with c_fc1:
+            st.markdown("#### 🃏 AI Flashcards")
+            if video.flashcards:
+                for idx, fc in enumerate(video.flashcards, 1):
+                    with st.expander(f"🎴 Card #{idx}: {fc.get('front', '')[:60]}…"):
+                        st.markdown(f"**Q:** {fc.get('front', '')}")
+                        st.markdown(f"**A:** {fc.get('back', '')}")
+            else:
+                st.info("No flashcards generated yet for this video.")
+
+        with c_fc2:
+            st.markdown("#### ⚙️ Generate")
+            if st.button("✨ Generate AI Flashcards", key=f"gen_fc_{video.video_id}", type="primary"):
+                if not video.transcript_text.strip():
+                    st.warning("No transcript available to generate flashcards.")
+                else:
+                    with st.spinner("Generating flashcards with AI…"):
+                        fc_list = summarizer.generate_flashcards(video.transcript_text, video.title)
+                    if fc_list:
+                        video.flashcards = fc_list
+                        video.updated_at = datetime.now().isoformat()
+                        storage.update_video(video)
+                        st.success(f"Generated {len(fc_list)} flashcards!")
+                        st.rerun()
+                    else:
+                        st.warning("Could not generate flashcards.")
+
+        st.divider()
+        st.markdown("#### 📤 Export & Sync Options")
+        c_exp1, c_exp2, c_exp3 = st.columns(3)
+
+        with c_exp1:
+            st.markdown("**📦 Anki Flashcard Deck**")
+            st.caption("TSV format ready to import directly into Anki.")
+            anki_tsv = export_anki_csv(video)
+            st.download_button(
+                "📥 Download Anki Deck (.tsv)",
+                anki_tsv,
+                file_name=f"{video.video_id}_anki.tsv",
+                mime="text/tab-separated-values",
+                key=f"dl_anki_{video.video_id}",
+            )
+
+        with c_exp2:
+            st.markdown("**🪨 Obsidian Markdown Note**")
+            st.caption("Formatted with YAML frontmatter, tags & GFM callouts.")
+            obs_md = export_obsidian_markdown(video)
+            st.download_button(
+                "📥 Download Obsidian Note (.md)",
+                obs_md,
+                file_name=f"{video.video_id}_obsidian.md",
+                mime="text/markdown",
+                key=f"dl_obs_{video.video_id}",
+            )
+
+        with c_exp3:
+            st.markdown("**📝 Notion Cloud Sync**")
+            st.caption("Sync video metadata directly into Notion Database.")
+            notion_key = os.getenv("NOTION_API_KEY", "")
+            notion_db = os.getenv("NOTION_DATABASE_ID", "")
+            if not notion_key or not notion_db:
+                st.warning("Set `NOTION_API_KEY` & `NOTION_DATABASE_ID` in `.env` to enable sync.")
+            else:
+                if st.button("🚀 Sync to Notion", key=f"sync_notion_btn_{video.video_id}"):
+                    try:
+                        with st.spinner("Syncing to Notion…"):
+                            sync_to_notion(video, notion_key, notion_db)
+                        st.success("Synced to Notion!")
+                    except Exception as exc:
+                        st.error(f"Notion Sync failed: {exc}")
 
 
 # ── Library ──

@@ -4,6 +4,20 @@ All notable changes to YouTube Learning Tracker are documented here.
 
 ---
 
+## [v0.12.0] — 2026-07-25
+
+### Added
+- **UI/UX Visual Design System** (`app/style.css`) — modern glassmorphism container elevation, dark mode CSS variables, glowing status badges, custom scrollbars, and smooth hover micro-animations.
+- **Automated AI Flashcard Generator** (`core/summarizer.py` & `models/video.py`) — generate 5–8 high-yield Q&A and Cloze deletion flashcards from video transcripts using Groq, OpenAI, or Anthropic LLMs with fallback extraction.
+- **Anki Flashcard Deck Exporter** (`core/exporters.py`) — export video flashcards as TSV/CSV files ready for direct import into Anki decks.
+- **Obsidian Markdown Exporter** (`core/exporters.py`) — export video study guides as Obsidian-optimized `.md` notes featuring YAML frontmatter metadata, GFM callout boxes (`> [!summary]`, `> [!notes]`, `> [!flashcards]`), and deep-linked timestamps.
+- **Notion Cloud Sync Integration** (`core/exporters.py`) — push video metadata, status, summary, and flashcards directly to a Notion Database via official Notion REST API (`NOTION_API_KEY` & `NOTION_DATABASE_ID`).
+- **⚡ Study & Integrations Tab** (`app/streamlit_app.py`) — dedicated video detail view tab exposing instant AI flashcard generation, Anki export, Obsidian note download, and Notion cloud sync.
+- **CLI Study Subcommands** (`cli.py`) — added `python cli.py export-anki <id>`, `python cli.py export-obsidian <id>`, and `python cli.py sync-notion <id>`.
+- **Unit Test Suite Expansion** (`tests/test_flashcards.py` & `tests/test_study_exporters.py`) — added 6 unit tests bringing total test suite count to 230 passing items (`100%` pass rate).
+
+---
+
 ## [v0.11.3] — 2026-07-25
 
 ### Added

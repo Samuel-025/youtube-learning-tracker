@@ -1,6 +1,6 @@
 # 📺 YouTube Learning Tracker
 
-> **v0.11.3** — Save, organise, summarise, track, download, export, rate, and schedule YouTube videos, Shorts, and Live streams from a clean Streamlit web app or CLI.
+> **v0.12.0** — Save, organise, summarise, track, download, export, rate, schedule, and study YouTube videos with AI Flashcards, Obsidian Markdown notes, Anki decks, and Notion Cloud Sync from a modern Streamlit web app or CLI.
 
 ---
 
@@ -8,6 +8,12 @@
 
 | Feature | Description |
 |---|---|
+| 🎨 Modern Design System | Custom CSS tokens, glassmorphism cards, glowing status badges & smooth micro-animations |
+| ⚡ Study & Integrations | Dedicated Study Suite for AI flashcards, Anki deck export, Obsidian Markdown notes & Notion sync |
+| 🎴 AI Flashcards | Auto-generate 5–8 Q&A study flashcards from video transcripts using Groq, OpenAI, or Anthropic |
+| 📦 Anki Deck Export | Download ready-to-import `.tsv` flashcard decks for spaced-repetition study in Anki |
+| 🪨 Obsidian Export | Export notes with YAML frontmatter, tags, GFM callouts (`> [!summary]`), and clickable timestamp deep-links |
+| 📝 Notion Cloud Sync | Direct REST API integration to push videos, summaries, and tags into a Notion Database |
 | 📥 Save videos | Paste any YouTube URL (standard watch, Shorts, or Live streams) — fetches metadata, thumbnail, tags & transcript automatically |
 | 📚 Library | Browse saved videos; filter by status, channel, and tags; sort by title / date added / progress |
 | 🔎 Inline Library search | Live text filter by title or channel — composes with all other filters simultaneously |

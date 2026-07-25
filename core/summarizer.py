@@ -186,6 +186,80 @@ class Summarizer:
         paragraph = " ".join(para_lines).strip()
         return bullets, paragraph
 
+    def generate_flashcards(self, transcript: str, title: str = "") -> list[dict[str, str]]:
+        """Generate 5–8 Q&A flashcards from transcript as [{'front': Q, 'back': A}]."""
+        if not transcript.strip():
+            return []
+
+        prompt = self._build_flashcard_prompt(transcript, title)
+        try:
+            if self.provider == "groq":
+                raw = groq_chat([{"role": "user", "content": prompt}], max_tokens=1024)
+                return self._parse_flashcard_response(raw)
+            elif self.provider == "openai":
+                from openai import OpenAI  # type: ignore[import-untyped]
+                client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                r = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=1024,
+                )
+                return self._parse_flashcard_response(r.choices[0].message.content or "")
+            elif self.provider == "anthropic":
+                import anthropic  # type: ignore[import-untyped]
+                from anthropic.types import TextBlock
+                client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+                msg = client.messages.create(
+                    model="claude-3-haiku-20240307",
+                    max_tokens=1024,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                for block in msg.content:
+                    if isinstance(block, TextBlock):
+                        return self._parse_flashcard_response(block.text)
+        except Exception:
+            pass
+
+        return self._basic_flashcards(transcript)
+
+    def _build_flashcard_prompt(self, transcript: str, title: str) -> str:
+        max_chars = 6000
+        clean = self._clean_transcript(transcript)
+        trimmed = clean[:max_chars] + ("..." if len(clean) > max_chars else "")
+        return (
+            "You are a study assistant. Generate 5 to 8 high-yield study flashcards from the transcript.\n"
+            "Format each card strictly as:\n"
+            "Q: [Question]\n"
+            "A: [Concise Answer]\n\n"
+            f"Title: {title}\nTranscript:\n{trimmed}"
+        )
+
+    def _parse_flashcard_response(self, text: str) -> list[dict[str, str]]:
+        cards: list[dict[str, str]] = []
+        current_q = None
+
+        for line in text.strip().split("\n"):
+            line = line.strip()
+            if line.upper().startswith("Q:"):
+                current_q = line[2:].strip()
+            elif line.upper().startswith("A:") and current_q:
+                ans = line[2:].strip()
+                cards.append({"front": current_q, "back": ans})
+                current_q = None
+
+        return cards
+
+    def _basic_flashcards(self, transcript: str) -> list[dict[str, str]]:
+        clean = self._clean_transcript(transcript)
+        sentences = [s.strip() for s in clean.replace("\n", " ").split(".") if len(s.strip()) > 30]
+        cards = []
+        for i in range(0, min(10, len(sentences) - 1), 2):
+            cards.append({
+                "front": f"Key Concept: {sentences[i][:80]}...?",
+                "back": sentences[i+1] + "." if not sentences[i+1].endswith(".") else sentences[i+1]
+            })
+        return cards
+
     def _basic_qa(self, transcript: str, question: str) -> str:
         clean    = self._clean_transcript(transcript)
         keywords = [w.lower() for w in question.split() if len(w) > 3]

@@ -264,6 +264,54 @@ def cmd_stats(args):
     console.print(table)
 
 
+def cmd_export_anki(args):
+    from core.exporters import export_anki_csv
+    video = storage.get_video(args.video_id)
+    if not video:
+        console.print(f"[red]Video not found: {args.video_id}[/red]")
+        return
+    tsv = export_anki_csv(video)
+    if not tsv.strip():
+        console.print("[yellow]No flashcards or summary bullets available to export.[/yellow]")
+        return
+    filename = f"{video.video_id}_anki.tsv"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(tsv)
+    console.print(f"[green]✓ Anki TSV deck exported to {filename}[/green]")
+
+
+def cmd_export_obsidian(args):
+    from core.exporters import export_obsidian_markdown
+    video = storage.get_video(args.video_id)
+    if not video:
+        console.print(f"[red]Video not found: {args.video_id}[/red]")
+        return
+    md = export_obsidian_markdown(video)
+    filename = f"{video.video_id}_obsidian.md"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(md)
+    console.print(f"[green]✓ Obsidian Markdown note exported to {filename}[/green]")
+
+
+def cmd_sync_notion(args):
+    from core.exporters import sync_to_notion
+    video = storage.get_video(args.video_id)
+    if not video:
+        console.print(f"[red]Video not found: {args.video_id}[/red]")
+        return
+    api_key = os.getenv("NOTION_API_KEY")
+    db_id = os.getenv("NOTION_DATABASE_ID")
+    if not api_key or not db_id:
+        console.print("[red]Missing NOTION_API_KEY or NOTION_DATABASE_ID in .env[/red]")
+        return
+    try:
+        console.print(f"[cyan]Syncing {video.title} to Notion...[/cyan]")
+        sync_to_notion(video, api_key, db_id)
+        console.print("[green]✓ Synced to Notion Database successfully.[/green]")
+    except Exception as exc:
+        console.print(f"[red]Notion Sync failed: {exc}[/red]")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="python cli.py",
@@ -307,6 +355,18 @@ def main():
 
     p_stats = subparsers.add_parser("stats", help="Show library stats")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_anki = subparsers.add_parser("export-anki", help="Export Anki TSV flashcard deck")
+    p_anki.add_argument("video_id", help="YouTube video ID")
+    p_anki.set_defaults(func=cmd_export_anki)
+
+    p_obsidian = subparsers.add_parser("export-obsidian", help="Export Obsidian Markdown note")
+    p_obsidian.add_argument("video_id", help="YouTube video ID")
+    p_obsidian.set_defaults(func=cmd_export_obsidian)
+
+    p_notion = subparsers.add_parser("sync-notion", help="Sync video to Notion Database")
+    p_notion.add_argument("video_id", help="YouTube video ID")
+    p_notion.set_defaults(func=cmd_sync_notion)
 
     args = parser.parse_args()
     args.func(args)

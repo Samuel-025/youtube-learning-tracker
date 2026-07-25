@@ -70,6 +70,7 @@ class Video:
     auto_notes:           list[str]    = field(default_factory=list)
     manual_notes:         str          = ""
     tags:                 list[str]    = field(default_factory=list)
+    flashcards:           list[dict[str, str]] = field(default_factory=list)  # [{"front": "...", "back": "..."}]
     local_path:           str | None   = None  # absolute path to downloaded file; None = not downloaded
     # ── Watch progress ───────────────────────────────────────────────
     watch_progress_sec:   int          = 0    # seconds watched so far
@@ -90,6 +91,12 @@ class Video:
         self.summary_bullets = [str(b) for b in self.summary_bullets]
         self.auto_notes      = [str(n) for n in self.auto_notes]
         self.tags            = [str(t) for t in self.tags]
+        # Coerce flashcard dicts
+        valid_fc = []
+        for fc in self.flashcards:
+            if isinstance(fc, dict) and "front" in fc and "back" in fc:
+                valid_fc.append({"front": str(fc["front"]), "back": str(fc["back"])})
+        self.flashcards = valid_fc
         # Normalise legacy empty-string sentinel from old JSON files
         if self.local_path == "":
             self.local_path = None
