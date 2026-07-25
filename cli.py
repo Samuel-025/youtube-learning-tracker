@@ -312,6 +312,32 @@ def cmd_sync_notion(args):
         console.print(f"[red]Notion Sync failed: {exc}[/red]")
 
 
+def cmd_delete(args):
+    success = storage.delete_video(args.video_id, delete_local_file=not args.keep_file)
+    if success:
+        console.print(f"[green]✓ Video {args.video_id} deleted successfully.[/green]")
+    else:
+        console.print(f"[red]Video not found: {args.video_id}[/red]")
+
+
+def cmd_delete_batch(args):
+    count = storage.delete_videos_batch(args.video_ids, delete_local_files=not args.keep_files)
+    console.print(f"[green]✓ Deleted {count} video(s).[/green]")
+
+
+def cmd_export_all_anki(args):
+    from core.exporters import export_all_anki_csv
+    videos = storage.get_all_videos()
+    tsv = export_all_anki_csv(videos)
+    if not tsv.strip():
+        console.print("[yellow]No flashcards available in library to export.[/yellow]")
+        return
+    filename = "library_all_anki.tsv"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(tsv)
+    console.print(f"[green]✓ Exported all library flashcards to {filename}[/green]")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="python cli.py",
@@ -356,9 +382,22 @@ def main():
     p_stats = subparsers.add_parser("stats", help="Show library stats")
     p_stats.set_defaults(func=cmd_stats)
 
+    p_del = subparsers.add_parser("delete", help="Delete a video record & file")
+    p_del.add_argument("video_id", help="YouTube video ID")
+    p_del.add_argument("--keep-file", action="store_true", help="Do not delete downloaded media file on disk")
+    p_del.set_defaults(func=cmd_delete)
+
+    p_del_batch = subparsers.add_parser("delete-batch", help="Bulk delete multiple videos")
+    p_del_batch.add_argument("video_ids", nargs="+", help="YouTube video IDs")
+    p_del_batch.add_argument("--keep-files", action="store_true", help="Do not delete downloaded media files")
+    p_del_batch.set_defaults(func=cmd_delete_batch)
+
     p_anki = subparsers.add_parser("export-anki", help="Export Anki TSV flashcard deck")
     p_anki.add_argument("video_id", help="YouTube video ID")
     p_anki.set_defaults(func=cmd_export_anki)
+
+    p_all_anki = subparsers.add_parser("export-all-anki", help="Export all flashcards across library as Anki deck")
+    p_all_anki.set_defaults(func=cmd_export_all_anki)
 
     p_obsidian = subparsers.add_parser("export-obsidian", help="Export Obsidian Markdown note")
     p_obsidian.add_argument("video_id", help="YouTube video ID")

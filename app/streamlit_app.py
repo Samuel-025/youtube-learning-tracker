@@ -294,17 +294,29 @@ def render_video_detail(video: Video) -> None:
             key=f"export_{video.video_id}",
         )
 
-    if st.button("Update video", key=f"update_{video.video_id}", type="primary"):
-        video.status = WatchStatus(status)
-        video.rating = rating
-        if clear_due:
-            video.due_date = None
-        else:
-            video.due_date = due_date_val.isoformat()
-        video.updated_at = datetime.now().isoformat()
-        storage.update_video(video)
-        st.success("Updated.")
-        st.rerun()
+    col_u1, col_u2 = st.columns([1, 1])
+    with col_u1:
+        if st.button("Update video", key=f"update_{video.video_id}", type="primary"):
+            video.status = WatchStatus(status)
+            video.rating = rating
+            if clear_due:
+                video.due_date = None
+            else:
+                video.due_date = due_date_val.isoformat()
+            video.updated_at = datetime.now().isoformat()
+            storage.update_video(video)
+            st.success("Updated.")
+            st.rerun()
+
+    with col_u2:
+        with st.popover("🗑️ Delete Video"):
+            st.warning(f"Are you sure you want to delete '{video.title}'?")
+            del_files = st.checkbox("Also delete downloaded media file on disk", value=True, key=f"del_files_{video.video_id}")
+            if st.button("Yes, Delete Video", key=f"confirm_del_{video.video_id}", type="primary"):
+                storage.delete_video(video.video_id, delete_local_file=del_files)
+                st.session_state["detail_video_id"] = None
+                st.success("Video deleted.")
+                st.rerun()
 
     st.divider()
 
@@ -583,6 +595,30 @@ def page_library() -> None:
         filtered.sort(key=lambda v: v.progress_pct, reverse=True)
 
     st.caption(f"{len(filtered)} video(s)")
+
+    with st.expander("⚡ Batch Actions & Library Flashcards Export"):
+        c_b1, c_b2 = st.columns(2)
+        with c_b1:
+            st.markdown("**📦 Export All Library Flashcards**")
+            all_anki = export_all_anki_csv(videos)
+            st.download_button(
+                "📥 Download All Anki Decks (.tsv)",
+                all_anki,
+                file_name="library_all_anki.tsv",
+                mime="text/tab-separated-values",
+                key="dl_all_anki_lib",
+            )
+        with c_b2:
+            st.markdown("**🗑️ Bulk Delete Videos**")
+            to_del = st.multiselect("Select videos to remove", options=filtered, format_func=lambda v: v.title, key="bulk_del_select")
+            if to_del:
+                del_files_batch = st.checkbox("Also delete downloaded media files", value=True, key="bulk_del_files_chk")
+                if st.button(f"Delete Selected ({len(to_del)})", type="primary", key="bulk_del_btn"):
+                    ids = [v.video_id for v in to_del]
+                    count = storage.delete_videos_batch(ids, delete_local_files=del_files_batch)
+                    st.success(f"Successfully deleted {count} video(s).")
+                    st.rerun()
+
     for video in filtered:
         cols = st.columns([1, 4, 1])
         with cols[0]:

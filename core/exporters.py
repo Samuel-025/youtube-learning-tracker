@@ -239,6 +239,30 @@ def export_anki_csv(video: "Video") -> str:
     return buf.getvalue()
 
 
+def export_all_anki_csv(videos: list["Video"]) -> str:
+    """Export all flashcards across the entire video library into a single Anki TSV file."""
+    buf = io.StringIO()
+    writer = csv.writer(buf, delimiter="\t", lineterminator="\r\n")
+
+    for video in videos:
+        cards = video.flashcards or []
+        if not cards and video.summary_bullets:
+            for i in range(0, len(video.summary_bullets) - 1, 2):
+                cards.append({
+                    "front": f"Key Takeaway: {video.title}",
+                    "back": f"{video.summary_bullets[i]} — {video.summary_bullets[i+1]}"
+                })
+
+        tags_str = " ".join(t.replace(" ", "_") for t in (video.tags or []))
+        for card in cards:
+            front = card.get("front", "").replace("\n", "<br>")
+            back = card.get("back", "").replace("\n", "<br>")
+            if front and back:
+                writer.writerow([front, back, tags_str, video.url])
+
+    return buf.getvalue()
+
+
 def export_obsidian_markdown(video: "Video") -> str:
     """Render a Video as an Obsidian-optimized Markdown file with YAML frontmatter & callouts.
 

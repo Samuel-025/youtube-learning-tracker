@@ -10,6 +10,7 @@
 |---|---|
 | 🎨 Modern Design System | Custom CSS tokens, glassmorphism cards, glowing status badges & smooth micro-animations |
 | ⚡ Study & Integrations | Dedicated Study Suite for AI flashcards, Anki deck export, Obsidian Markdown notes & Notion sync |
+| 🗑️ Single & Bulk Deletion | Delete individual or multiple selected videos with automated media disk space cleanup |
 | 🎴 AI Flashcards | Auto-generate 5–8 Q&A study flashcards from video transcripts using Groq, OpenAI, or Anthropic |
 | 📦 Anki Deck Export | Download ready-to-import `.tsv` flashcard decks for spaced-repetition study in Anki |
 | 🪨 Obsidian Export | Export notes with YAML frontmatter, tags, GFM callouts (`> [!summary]`), and clickable timestamp deep-links |

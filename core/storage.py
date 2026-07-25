@@ -9,6 +9,7 @@ import logging
 import os
 import threading
 from datetime import datetime          # fix B13: moved to module-level
+from pathlib import Path
 from typing import Optional
 from models.video import Video, WatchStatus
 from models.collection import Collection
@@ -116,11 +117,23 @@ class Storage:
                 logger.warning("Skipped corrupt video record %s: %s", vid_id, exc)
         return videos
 
-    def delete_video(self, video_id: str) -> bool:
+    def delete_video(self, video_id: str, delete_local_file: bool = True) -> bool:
         with _STORAGE_LOCK:  # fix #8: hold lock for entire delete + collection update
             data = self._read()
             if video_id not in data:
                 return False
+            
+            # Optional cleanup of downloaded file on disk
+            if delete_local_file:
+                try:
+                    video = Video.from_dict(data[video_id])
+                    if video.local_path:
+                        lp = Path(video.local_path)
+                        if lp.exists():
+                            lp.unlink(missing_ok=True)
+                except Exception as exc:
+                    logger.warning("Could not delete local file for video %s: %s", video_id, exc)
+
             del data[video_id]
             self._write(data)
 
@@ -135,6 +148,42 @@ class Storage:
             if changed:
                 self._write_collections(coll_data)
         return True
+
+    def delete_videos_batch(self, video_ids: list[str], delete_local_files: bool = True) -> int:
+        """Bulk delete multiple videos by ID. Returns count of deleted items."""
+        deleted_count = 0
+        with _STORAGE_LOCK:
+            data = self._read()
+            coll_data = self._read_collections()
+            coll_changed = False
+
+            for vid in video_ids:
+                if vid in data:
+                    if delete_local_files:
+                        try:
+                            video = Video.from_dict(data[vid])
+                            if video.local_path:
+                                lp = Path(video.local_path)
+                                if lp.exists():
+                                    lp.unlink(missing_ok=True)
+                        except Exception as exc:
+                            logger.warning("Could not delete local file for %s: %s", vid, exc)
+
+                    del data[vid]
+                    deleted_count += 1
+
+                    for coll_dict in coll_data.values():
+                        ids = coll_dict.get("video_ids", [])
+                        if vid in ids:
+                            ids.remove(vid)
+                            coll_changed = True
+
+            if deleted_count > 0:
+                self._write(data)
+            if coll_changed:
+                self._write_collections(coll_data)
+
+        return deleted_count
 
     def update_video(self, video: Video) -> None:
         video.update_timestamp()
